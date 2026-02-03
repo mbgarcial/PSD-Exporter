@@ -1,6 +1,6 @@
 
 
-from psd_funcs2 import *
+from psd_funcs import *
 import tkinter as tk
 from tkinter import ttk 
 from tkinter import filedialog as fd #This is for opening files
