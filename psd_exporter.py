@@ -8,23 +8,6 @@ import tkinter.scrolledtext as scrolledtext
 from PIL import ImageTk
 
 
-#TODO NEXT:
-
-# - Resize!!
-
-# - Make widget size bigger to fit the window
-
-#-------------------------------------------------------------------------------------------
-# This version shows non-expandable tree on opening, and has buttons to export layers.
-# Default behavior is:
-#       - export layers trimmed of blank pixels OR document size OR visible PSD size
-#       - ignore invisible layers
-#       - ignore clipping layers when exporting, and apply them to layers that have them
-#       - apply masks to layers (NOT GROUPS) that have them
-#       - create new folders for groups and export their contents
-#       - if a group has a mask, apply it to all its children.
-#       - crop layer/group's children to mask size
-#-------------------------------------------------------------------------------------------
 # CREDITS:
 # How to add an image in tkinter: https://www.geeksforgeeks.org/python/how-to-add-an-image-in-tkinter/
 # Save pil image with saveasfile tkinter: https://www.daniweb.com/programming/software-development/threads/520677/how-to-save-the-edited-photo-tkinter-as-jpg-with-asksaveasfilename#:~:text=Dani%20AI,image%20as...'%2C
@@ -43,7 +26,6 @@ class App:
         self.height = int(geometry.split("x", 1)[1].split("+")[0])
 
         # These are to pass stuff around the gui and the external functions
-        self.args    = list()
         self.kwargs  = dict()
         self.lastdir = '/'
 
@@ -95,13 +77,15 @@ class App:
         # Resize
         self.resize_frame = tk.LabelFrame(self.left_frame, text="Size", padx=5)
         # Width input
-        self.width_input = tk.StringVar(value="100")
-        self.width_input_entry = tk.Entry(self.resize_frame, textvariable = self.width_input, width=5, validate="all", validatecommand=(vcmd, '%P'))
-        
+        self.width_input = tk.IntVar(value=100)
+        self.width_input_entry = tk.Entry(self.resize_frame, textvariable = str(self.width_input), width=5, validate="all", validatecommand=(vcmd, '%P'))
+         # registering the observer
+        self.width_input.trace_add('write', self.width_callback)
+
         # height input
-        self.height_input = tk.StringVar(value="100")
-        self.height_input_entry = tk.Entry(self.resize_frame, textvariable = self.width_input, width=5,validate="all", validatecommand=(vcmd, '%P'))
-        
+        self.height_input = tk.IntVar(value=100)
+        self.height_input_entry = tk.Entry(self.resize_frame, textvariable = str(self.width_input), width=5,validate="all", validatecommand=(vcmd, '%P'))
+       
         # Ratio checkbox
         self.aspect_ratio = tk.BooleanVar(value=True)
         self.aspect_ratio_check = ttk.Checkbutton(self.resize_frame, text = "maintain aspect ratio", variable=self.aspect_ratio, onvalue=True, offvalue=False, command=self.toggle_aspect_ratio)
@@ -119,6 +103,35 @@ class App:
         #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 300px wide (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
         #⚠️ Export at 500 px height
         #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 500px height (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
+
+    # defining the callback function (observer)
+    def width_callback(self,var, index, mode):
+        """Observer for width input"""
+        width = self.width_input.get()
+        keep = self.aspect_ratio.get()
+        kind = self.resize_type.get()
+        
+        # now check if aspect ratio is selected
+        if keep:
+            if kind == "%":
+                self.height_input.set(width)
+            else:
+                self.height_input.set(self.get_height(width))
+
+    def get_height(self, width)-> int:
+        ratio = self.kwargs.get("ratio",1.0)
+        return get_size_from_ratio(ratio,width=width)
+
+    def reset_variables(self):
+        """Resets all 'screen' variables to their default values."""
+        self.ignore_invisible.set(True)
+        self.trim_to_mask.set(False)
+        self.trim.set("all")
+        self.resize_type.set("%")
+        self.width_input.set(100)
+        self.height_input.set(100)
+        self.aspect_ratio.set(True)
+
 
     def show_export_gui(self):
         """Shows exporting gui"""
@@ -148,51 +161,47 @@ class App:
     def percent_pixel_switch(self,choice):
         """switches between percent and pixel entries."""
         kind = self.resize_type.get()
-        #print("Pixel to percent switch!!", choice)
 
         # if we're not changing anything, don't do anything.
         if kind == self.kwargs["kind"]:
             return
         
-        nw, nh = str(100),str(100)
+        # call toggle aspect ratio function
+        self.toggle_aspect_ratio()
+
+        nw, nh = 100,100
         
         # og size
-        ow, oh = self.kwargs["file"]["psd_size"]
+        og_size = self.kwargs["file"]["psd_size"]
+        ow, oh = og_size
         # get w & h values from input
         iw,ih = self.width_input.get(), self.height_input.get() 
         
         # if we're changing from px to %:
         if kind == "%":
+            iw,ih = float(iw), float(ih)
             # get the % from og
-            nw = round((100/ow)*float(iw))
-            nh = round((100/ow)*float(ih))
+            nw = get_percent(og_size,width=iw)#round((100/ow)*float(iw)) #x = (nw/ow)*100
+            nh = get_percent(og_size,height=ih)#round((100/oh)*float(ih))
             
         # if we're changing from % input to pixels
         elif kind == "px":
             # multiply og size with input %
-            nw, nh = int(ow*float(iw)/100), int(oh*float(ih)/100)     
+            nw, nh = get_size(og_size,float(iw), width=True),get_size(og_size,float(ih), height=True)# round(ow*float(iw)/100), round(oh*float(ih)/100)     
 
         # save kind
         self.kwargs["kind"] = kind
         # set vars to new values
-        self.width_input.set(str(nw))
-        self.height_input.set(str(nh)) 
+        self.width_input.set(nw)
+        self.height_input.set(nh) 
         
-    def get_psd_ratio(self) -> float:
-        """get the aspect ratio"""
-        psd = self.kwargs.get("file",None)
-
-        if not psd:
-            return 1.0
-
-        return psd.size[0]/psd.size[1]
     
     def validate_numbers(self,P):
         """
         Validation function to allow only digits and deletion.
         %P represents the value the text will have if the change is allowed.
         """
-        if P.isdigit() or P == "":
+        if P.isdigit():
             return True
         else:
             return False
@@ -207,20 +216,22 @@ class App:
         iw,ih = self.width_input.get(), self.height_input.get() 
         self.kwargs["keep_aspect_ratio"] = self.aspect_ratio.get()
 
+        # if w and/or h are 0, set them to 1
+        iw = 1.0 if iw in ["0",""] else float(iw)
+        ih = 1.0 if ih in ["0",""] else float(ih) 
+
         # If we keep aspect ratio
         if self.kwargs["keep_aspect_ratio"]:
             
             # if we were retrieving %, save that as scale
             if self.kwargs["kind"] == "%":
-                self.kwargs["scale"] = float(iw)/100
-                #print("retrieving scale when kind is %:",self.kwargs["scale"])
-
+                self.kwargs["scale"] = iw/100
+                
             # if we were retrieving px, get the % by multiplying the og size and the new size (?)
             else:
-                self.kwargs["scale"] = ((float(iw)/og_size[0]))
+                self.kwargs["scale"] = iw/og_size[0]
 
-                #print("retrieving scale when kind is px:",self.kwargs["scale"])
-
+            # save new height and width
             self.kwargs["width"], self.kwargs["height"] = [i*self.kwargs["scale"] for i in og_size]
 
         # if we're not keeping the aspect ratio...
@@ -230,23 +241,37 @@ class App:
 
             # if we were retrieving %, multiply that to the og sizes and store them.
             if self.kwargs["kind"] == "%":
-                self.kwargs["width"]  = int(float(iw)/100*og_size[0])
-                self.kwargs["height"] = int(float(ih)/100*og_size[1])
+                self.kwargs["width"]  = get_size(og_size,iw, width=True)#round(iw/100*og_size[0])
+                self.kwargs["height"] = get_size(og_size,ih, height=True)#round(ih/100*og_size[1])
 
             # if we were retrieving px, just save those.
             else:
                 self.kwargs["width"], self.kwargs["height"] = int(iw), int(ih)
         
-
     def toggle_aspect_ratio(self):
-        val = self.aspect_ratio.get()
+        val   = self.aspect_ratio.get()
+        kind  = self.resize_type.get()
+        ratio = self.kwargs.get("ratio",1.0)
         self.kwargs["keep_aspect_ratio"] = val
+        
+        # if keeping aspect ratio, disable height.
         if val:
-            # if keeping aspect ratio, disable height.
-            self.height_input_entry.config(state="disabled",disabledbackground="light gray", textvariable=self.width_input)
-            self.height_input.set(self.width_input.get())
+            self.height_input_entry.config(state="disabled",disabledbackground="light gray")
+            # if we're doing %, copy % from width to height
+            if kind == "%":
+                self.height_input.set(self.width_input.get())
+                self.height_input_entry.config(textvariable=self.width_input)
+            else:
+                self.height_input.set(get_size_from_ratio(ratio,width=self.width_input.get()))
+                self.height_input_entry.config(textvariable=self.height_input)
+        
+        # if we disable it, set height back to normal
         else:
-            self.height_input.set(self.width_input.get())
+            if kind == "%":
+                self.height_input.set(self.width_input.get())
+            else:
+                self.height_input.set(get_size_from_ratio(ratio,width=self.width_input.get()))
+                
             self.height_input_entry.config(state="normal",textvariable=self.height_input)
 
 
@@ -268,6 +293,9 @@ class App:
         var = getattr(self,toggle).get()
         self.kwargs[toggle] = var
 
+    
+
+
     def select_file(self):
         """Function to pick a file in the OS file picker"""
 
@@ -287,9 +315,12 @@ class App:
             result = self.open_psd(filename)
             #if reading the file was successful, assign its result to the app to pass it to other funcs.
             if result:
+                self.kwargs = dict()
                 self.kwargs["file"] = result
-                self.kwargs["kind"] = "%"
                 self.kwargs["width"], self.kwargs["height"] = result["psd_size"]
+                self.kwargs["kind"] = "%"
+                self.kwargs["ratio"] = get_psd_ratio(result["psd"])
+                self.reset_variables()
                 self.show_tree()
         
     def open_psd(self, filename):

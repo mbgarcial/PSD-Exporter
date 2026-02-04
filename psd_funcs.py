@@ -254,6 +254,7 @@ def get_width_scale(og_size,new_width)->float:
     """returns width scale"""
     return get_scale(og_size,width=new_width)
     
+# aux ----     
 def get_scale(size:tuple[int,int], width=None, height=None)-> float:
     """returns a float that corresponds what % of the og width/heigh is the given width/height"""
     ogw, ogh = size
@@ -262,8 +263,34 @@ def get_scale(size:tuple[int,int], width=None, height=None)-> float:
     elif height:
         return height/ogh
     return 1.0
+
+def get_percent(size:tuple[int,int], width=None, height=None)-> int:
+    """Same as scale, but returns the rounded %, not a float."""
+    return round(get_scale(size, width=width, height=height)*100)
+
+def get_size(size:tuple[int,int], percent:float, width=False, height=False)->int:
+    """get new rounded width or height given a size tuple and a % percent"""
+    ogw, ogh= size
+    if width != None:
+        return round(ogw*percent/100)
+    elif height != None:
+        return round(ogh*percent/100)
+    return ogw
+
+def get_size_from_ratio(ratio:float, width=None, height=None) -> int:
+    """get new height or width given an aspect ratio and the other size element"""
+    if width:
+        return round(width/ratio)
+    elif height:
+        return round(ratio*height)
+    return 0
 #--------------------
 # GUI Integration
+
+def get_psd_ratio(psd:PSDImage)->float:
+    """return the image ratio (width/height)"""
+    size = psd.size
+    return size[0]/size[1]
 
 def get_repr(psd:PSDImage)->str:
     """PSD Layer structure as a string"""
