@@ -164,6 +164,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 
     return True
 
+#----------------------------------------------------------------
 # PSD Processing - aux
 
 def check_image_exists(filepath)->bool:
@@ -255,7 +256,8 @@ def composite_alpha(layer,alpha,canvas_size) -> Image.Image|None:
 
     return image
 
-# other aux ----  
+# resize auxs for GUI and Save ----  
+
 def get_height_scale(og_size,new_height)->float:
     """returns height scale"""
     return get_scale(og_size,height=new_height)
@@ -316,7 +318,6 @@ def get_resize(size:tuple[int,int], kind:str="%", **kwargs) -> int:
             elif h:
                 return h/ogh*100
         
-
     # if we're not converting, we want the value not provided. Only needed for keepratio.
     else:
         # %h = %w, so return the same value given.
@@ -337,10 +338,28 @@ def get_resize(size:tuple[int,int], kind:str="%", **kwargs) -> int:
 #--------------------
 # GUI Integration
 
-def get_psd_ratio(psd:PSDImage)->float:
-    """return the image ratio (width/height)"""
-    size = psd.size
-    return size[0]/size[1]
+def get_psd_thumbnail(psd):
+    """returns a thumbnail image for a psd"""
+    thumb = psd.thumbnail()
+    
+    if not thumb:
+        image = psd.composite(apply_icc=False)
+        w, h = image.size
+        new_h = 120
+        new_w = int(1/(h/w) * new_h)
+        thumb = image.resize((new_w, new_h))
+
+    return thumb
+
+def get_psd_dir(filename):
+    """matches a string and returns a match"""
+    match = re.match(r"(.*/).*\.psd",filename)
+    if match:
+        return match.group(1)
+    return '/'
+
+#----------------------------------
+# Tree
 
 def get_repr(psd:PSDImage)->str:
     """PSD Layer structure as a string"""
@@ -415,7 +434,7 @@ def get_psd_filename_from_path(filename:str) -> str:
     return ""
 
 def get_export_args(**kwargs) -> dict:
-    """returns relevant kwargs for process.psd"""
+    """Given a dict, it initializes all kwargs for process.psd"""
     
     # default arg values
     default = {

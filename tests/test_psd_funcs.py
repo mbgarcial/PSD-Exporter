@@ -7,6 +7,12 @@ from psd_exporter import *
 
 # TESTS for psd_funcs
 
+def test_get_psd_dir():
+    assert get_psd_dir("photo.psd") == "/"
+    assert get_psd_dir("lala/photo.psd") == "lala/"
+    assert get_psd_dir("lala/lele/") == "/"
+    assert get_psd_dir("lala/lele/photo.png") == "/"
+
 #get_resize()
 def test_get_resize():
     size = (800,600)
@@ -15,16 +21,16 @@ def test_get_resize():
         get_resize(size)
 
     # percent returns same percent
-    assert get_resize(size,width=100) == 100
-    assert get_resize(size,height=50) == 50
+    assert get_resize(size, width=100) == 100
+    assert get_resize(size, height=50) == 50
 
     # pixels returns the proportional other size
     assert get_resize(size, kind="px", width=1920) == 1440
     assert get_resize((1280,720), kind="px", height=1080) == 1920
 
     # convert % to px
-    assert get_resize(size,width=100, convert=True) == 800
-    assert get_resize(size,height=50, convert=True) == 300
+    assert get_resize(size, width=100, convert=True) == 800
+    assert get_resize(size, height=50, convert=True) == 300
 
     # convert px to %
     assert get_resize(size, width = 800, kind="px", convert=True) == 100
@@ -33,18 +39,19 @@ def test_get_resize():
 def test_size_convert():
     size = (800,600)
     # convert to %
-    assert size_convert(size,(800,600), kind="%") == (100,100)
-    assert size_convert(size,(400,150), kind="%") == (50,25)
+    assert size_convert(size,(800,600), "%") == (100,100)
+    assert size_convert(size,(400,150), "%") == (50,25)
 
     # convert to px
-    assert size_convert(size,(100,100), kind="px") == (800,600)
-    assert size_convert(size,(10,100), kind="px") == (80,600)
+    assert size_convert(size,(100,100), "px") == (800,600)
+    assert size_convert(size,(10,100), "px") == (80,600)
 
     # back and forth
-    a = size_convert(size,(100,100), kind="px")
-    assert size_convert(size,a,kind="%") == (100,100)
-    a = size_convert(size,(400,150), kind="px")
-    assert size_convert(size,a,kind="%") == (400,150)
+    a = size_convert(size, (100,100), "px")
+    assert size_convert(size,a,"%") == (100,100)
+
+    a = size_convert(size,(400,150),"px")
+    assert size_convert(size,a,"%") == (400,150)
 
 
 

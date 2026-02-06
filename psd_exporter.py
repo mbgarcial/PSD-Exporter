@@ -6,6 +6,7 @@ from tkinter import ttk
 from tkinter import filedialog as fd #This is for opening files
 import tkinter.scrolledtext as scrolledtext
 from PIL import ImageTk
+from functools import partial
 
 
 # CREDITS:
@@ -122,10 +123,12 @@ class App:
         """Shows exporting gui"""
         # row 2
         self.export_button.grid(row = 2, column = 0, pady = 2)
+        
         # row 3-5
         tk.Label(self.left_frame, text="").grid(row = 3, column = 0, pady=1, sticky=tk.W) # <- temp
         self.ignore_invisible_check.grid(row = 4, column = 0, pady=2, sticky=tk.W)
         self.trim_to_mask_check.grid(row = 5, column = 0, pady=1, sticky=tk.W)
+        
         # row 6
         self.trim_frame.grid(row = 6, column = 0, pady=2, sticky=tk.W)
         self.trim_layers_radio.grid(row = 1, column = 0, pady=1, sticky=tk.W)
@@ -139,10 +142,43 @@ class App:
         self.width_input_entry.grid(row = 1, column = 1, pady=1, sticky=tk.W)
         tk.Label(self.resize_frame, text="x H:").grid(row = 1, column = 2, pady=1, sticky=tk.W)
         self.height_input_entry.grid(row = 1, column = 3, pady=1, sticky=tk.W)
-        #self.height_input_entry.config(state="disabled")
         self.resize_type_menu.grid(row = 1, column = 4, pady=1, sticky=tk.W)
         self.aspect_ratio_check.grid(row = 2, column = 0, pady=1,columnspan=4)
 
+    def show_thumb(self, thumb):
+        """Shows the thumbnail"""
+        if thumb:
+            thumb = ImageTk.PhotoImage(thumb)
+            self.thumbnail.config(image = thumb)
+            self.thumbnail.image = thumb #type: ignore 
+            self.thumbnail.grid(row = 1, column = 0, columnspan = 2, pady = 2)
+
+    def show_tree(self):
+        """Function to show psd layers and folders"""
+
+        #use self.kwargs to access the psd file
+        psd, psd_name, *_ = self.kwargs["file"].values()
+
+        #update status bar
+        self.status_bar.config(text="Opening Layer structure...")
+        self.master.update_idletasks()
+
+        #Update status bar
+        self.status_bar.config(text="Done!")
+        self.master.update_idletasks()
+
+        #Update psd info to show the tree using get_repr
+        self.psdinfo.config(state=tk.NORMAL)
+        self.psdinfo.insert(tk.END,get_repr(psd))
+        self.psdinfo.config(state=tk.DISABLED)
+
+        self.right_frame.config(text=str(psd_name))
+
+    def reset_tree(self):
+        """Clears the testfield that shows the tree"""
+        self.psdinfo.config(state=tk.NORMAL)
+        self.psdinfo.delete("1.0", tk.END) #???
+        self.psdinfo.config(state=tk.DISABLED)
     # METHODS used inside the app ----
 
     def resize_set_focus(self,event):
@@ -169,35 +205,39 @@ class App:
         self.width_input.set(100)
         self.height_input.set(100)
         self.aspect_ratio.set(True)
-
-    # defining the callback function (observer) for when variable changes
+    
     def resize_callback(self, var, *args):
         """Observer for size input that modifies the value not being edited in real time"""
 
-        width  = self.width_input.get()
-        height = self.height_input.get()
-        keep   = self.aspect_ratio.get()
-        kind   = self.resize_type.get()
-        focus  = self.resize_focus.get()
-
+        width   = self.width_input.get()
+        height  = self.height_input.get()
+        keep    = self.aspect_ratio.get()
+        kind    = self.resize_type.get()
+        focus   = self.resize_focus.get()
         og_size = self.kwargs["file"]["psd_size"]
 
+        # defining callables
+        set_height = self.height_input.set
+        set_width  = self.width_input.set
+        px_resize  = partial(get_resize,size=og_size,kind="px")
+
         #check if aspect ratio is selected, otherwise do nothing.
-        if keep:
-            # if we're in %, make sure height and width are the same
-            if kind == "%":
-                self.height_input.set(width)
+        if not keep:
+            return
+        
+        # if we're in %, make sure height and width are the same
+        if kind == "%":
+            set_height(width)
+            
+        # if we're in pixels
+        else:
+
+            if var == "width_input" and focus == "w_entry":
+                set_height(px_resize(width=width))
+
+            elif var == "height_input" and focus == "h_entry":
+                set_width(px_resize(height=height))
                 
-            # if we're in pixels
-            else:
-                if var == "width_input" and focus == "w_entry":
-                    self.height_input.set(get_resize(og_size, kind="px", width=width))
-
-
-                elif var == "height_input" and focus == "h_entry":
-                    self.width_input.set(get_resize(og_size, kind="px", height=height))
-
-
     def percent_pixel_switch(self,choice):
         """switches between percent and pixel entries."""
         
@@ -220,100 +260,67 @@ class App:
         # set vars to new values
         self.width_input.set(int(nw))
         self.height_input.set(int(nh)) 
-
-        
+      
     def toggle_aspect_ratio(self):
         """Activates 'keep aspect ratio', 
         which makes sure that when one value is altered, 
         the other is altered in proportion."""
 
-        keep  = self.aspect_ratio.get() # keep aspect ratio toggle
-        kind  = self.resize_type.get()  # px / % toggle
-        focus = self.resize_focus.get() # last field focused
+        keep   = self.aspect_ratio.get() # keep aspect ratio toggle
+        kind   = self.resize_type.get()  # px / % toggle
+        focus  = self.resize_focus.get() # last field focused
+        width  = self.width_input.get()
+        height = self.height_input.get()
         
         # if we're not changing it, don't do anything
         if keep == self.kwargs["keep_aspect_ratio"]:
             return
+        
+        # defining simpliified callables 
+        set_height = self.height_input.set
+        set_width  = self.width_input.set
         
         # if activating aspect ratio
         if keep:
             # if we're using %, copy the number from whatever was focused last
             if kind == "%": 
                 if focus == "w_entry":
-                    self.height_input.set(self.width_input.get())
+                    set_height(width)
                 else:
-                    self.width_input.set(self.height_input.get())
+                    set_width(height)
                 
             # if we're doing pixels, also use the last focus as source, and make sure height entry is tracking height and not width.
             else:
-
-                og_size = self.kwargs["file"]["psd_size"]
+                
+                # simplified callable
+                px_resize = partial(get_resize,size=self.kwargs["file"]["psd_size"],kind="px")
 
                 if focus == "w_entry":        
-                    self.height_input.set(get_resize(og_size, kind="px", width=self.width_input.get()))
+                    set_height(px_resize(width=width))
                 else:
-                    self.width_input.set(get_resize(og_size, kind="px", height=self.height_input.get()))
+                    set_width(px_resize(height=height))
 
         
         # if we're disabling ratio, make sure to copy % still before doing anything.
         elif kind == "%": 
-            self.height_input.set(self.width_input.get())
+            set_height(width)
                         
         # save it.
         self.kwargs["keep_aspect_ratio"] = keep
-
-    def retrieve_input_kwargs(self):
-        """retrieves the values from input fields and stores them in kwargs when exporting"""
-        
-        # get og size
-        og_size = self.kwargs["file"]["psd_size"]
-
-        # retrieve input_w, input_h, kind and aspect ratio
-        iw,ih = self.width_input.get(), self.height_input.get() 
-        self.kwargs["kind"] = self.resize_type.get()
-        self.kwargs["keep_aspect_ratio"] = self.aspect_ratio.get()
-
-        # if w and/or h are 0, set them to 1
-        iw = 1.0 if iw in ["0",""] else float(iw)
-        ih = 1.0 if ih in ["0",""] else float(ih) 
-
-        # If we keep aspect ratio
-        if self.kwargs["keep_aspect_ratio"]:
-            
-            # if we were retrieving %, save that as scale
-            if self.kwargs["kind"] == "%":
-                self.kwargs["scale"] = iw/100
-                
-            # if we were retrieving px, get the % by dividing new size and og size
-            else:
-                self.kwargs["scale"] = iw/og_size[0]
-
-            # save new height and width. This will be the new max canvas size.
-            self.kwargs["width"], self.kwargs["height"] = [i * self.kwargs["scale"] for i in og_size]
-
-        # if we're not keeping the aspect ratio...
-        else:
-            #set scale to something else so it knows it has to resize
-            self.kwargs["scale"] = 1.1
-
-            # if we were retrieving %, multiply that to the og sizes and store them.
-            if self.kwargs["kind"] == "%":
-                self.kwargs["width"]  = get_resize(og_size, width  = iw, convert = True)
-                self.kwargs["height"] = get_resize(og_size, height = ih, convert = True)
-
-            # if we were retrieving px, just save those.
-            else:
-                self.kwargs["width"], self.kwargs["height"] = int(iw), int(ih)
-        
+    
     def toggle_trim(self):
         """Toggles several kwargs related to trimming/cropping"""
-        val = self.trim.get()
-        if val == "all":
+
+        trim = self.trim.get()
+
+        if trim == "all":
             self.kwargs["trim_layers"]     = True
             self.kwargs["trim_to_visible"] = False
-        elif val == "visible":
+
+        elif trim == "visible":
             self.kwargs["trim_layers"]     = False
             self.kwargs["trim_to_visible"] = True
+
         else:
             self.kwargs["trim_layers"]     = False
             self.kwargs["trim_to_visible"] = False
@@ -332,74 +339,97 @@ class App:
         # this opens an open file window.
         filename  = fd.askopenfilename(title='Open a psd file', filetypes=filetypes, initialdir=self.lastdir)
 
-        # this is to set the open file starding dir to the path of the last opened file next time it's used.
-        match = re.match(r"(.*/).*\.psd",filename)
-        if match:
-            self.lastdir = match.group(1)
+        # this is to set the open file starting dir to the path of the last opened file next time it's used.
+        self.lastdir = get_psd_dir(filename)
 
         # if we opened a file, read it
         if filename:
             result = self.open_psd(filename)
-            #if reading the file was successful, assign its result to the app to pass it to other funcs.
-            if result:
-                self.kwargs = dict()
-                self.kwargs["file"] = result
-                self.kwargs["width"], self.kwargs["height"] = result["psd_size"]
-                self.kwargs["kind"] = "%"
-                self.kwargs["keep_aspect_ratio"] = True
-                self.reset_variables()
-                self.show_tree()
+        
+
+    def kwargs_init(self,result):
+        self.kwargs = dict()
+        self.kwargs["file"] = result
+        self.kwargs["width"], self.kwargs["height"] = result["psd_size"]
+        self.kwargs["kind"] = "%"
+        self.kwargs["keep_aspect_ratio"] = True
         
     def open_psd(self, filename):
         """Function to open a PSD file and read it"""
 
         # call the external open_psd func (in psd_funcs.py)
         result = open_psd(filename)
-        thumb = result["psd"].thumbnail()
-        if not thumb:
-            image = result["psd"].composite(apply_icc=False)
-            w, h = image.size
-            new_h = 120
-            new_w = int(1/(h/w) * new_h)
-            thumb = image.resize((new_w, new_h))
-
-            #thumb.save("thumb.png")
-        if thumb:
-            thumb = ImageTk.PhotoImage(thumb)
-
-        # update text of status bar
+        
+        # if it didn't work, return
         if not result:
             self.status_bar.config(text = "Couldn't read the file")
+            return result
+
+        # update text of status bar
+        self.status_bar.config(text = "Opened "+ result["psd_name"]) # type: ignore
+        
+        # init kwargs & variables and reset tree
+        self.kwargs_init(result)
+        self.reset_variables()
+        self.reset_tree()
+
+        # show thumbnail, export forms and the tree
+        self.show_thumb(get_psd_thumbnail(result["psd"]))
+        self.show_export_gui()
+        self.show_tree()
+    
+    def retrieve_input_kwargs(self):
+        """retrieves ALL the relevant values from input fields, radiobuttons and checkboxes and stores them in kwargs for exporting"""
+        
+        # get og size
+        og_size = self.kwargs["file"]["psd_size"]
+
+        # retrieve input_w, input_h, kind and aspect ratio
+        iw, ih                           = self.width_input.get(), self.height_input.get() 
+        self.kwargs["kind"]              = self.resize_type.get()
+        self.kwargs["keep_aspect_ratio"] = self.aspect_ratio.get()
+
+        # if w and/or h are 0, set them to 1
+        iw = 1.0 if iw in [0,"0",""] else float(iw)
+        ih = 1.0 if ih in [0,"0",""] else float(ih) 
+
+        # If we keep aspect ratio
+        if self.kwargs["keep_aspect_ratio"]:
+            
+            # if we were retrieving %, save that as scale
+            if self.kwargs["kind"] == "%":
+                self.kwargs["scale"] = iw/100
+                
+            # if we were retrieving px, get the % by dividing new size and og size
+            else:
+                self.kwargs["scale"] = iw/og_size[0]
+
+            # save new height and width. This will be the new max canvas size.
+            self.kwargs["width"], self.kwargs["height"] = [i * self.kwargs["scale"] for i in og_size]
+
+        
+        # if we're NOT keeping the aspect ratio
         else:
-            self.status_bar.config(text = "Opened "+ result["psd_name"]) #type:ignore
-            # show the thumbnail
-            if thumb:
-                self.thumbnail.config(image = thumb)
-                self.thumbnail.image = thumb #type: ignore 
-                self.thumbnail.grid(row = 1, column = 0, columnspan = 2, pady = 2)
-            #else:
-            #    self.thumbnail.pack_forget()
-            # reset tree
-            self.psdinfo.config(state=tk.NORMAL)
-            self.psdinfo.delete("1.0", tk.END) #???
-            self.psdinfo.config(state=tk.DISABLED)
+            #set scale to something else so the function knows it has to resize
+            self.kwargs["scale"] = 1.1
 
-            # show the export stuff
-            self.show_export_gui()
+            # if we were retrieving %, multiply that to the og sizes and store them.
+            if self.kwargs["kind"] == "%":
+                self.kwargs["width"]  = get_resize(og_size, width  = iw, convert = True)
+                self.kwargs["height"] = get_resize(og_size, height = ih, convert = True)
 
-        # return the result of the read psd func (a dict that's empty if it fails)
-        return result
+            # if we were retrieving px, just save those.
+            else:
+                self.kwargs["width"], self.kwargs["height"] = int(iw), int(ih)
     
     def export_psd(self, flat=False):
         """Function that calls other exporter functions, for the PSDImage file"""
 
-        # use self.kwargs to access the psd file
+        # use self.kwargs to access the psd file and get its name without .psd
         psd, psd_name, *_ = self.kwargs["file"].values()
-
-        # get the name of the psd.
         name = psd_name.removesuffix(".psd")
 
-        # this opens a save_as window.
+        # Open a save_as window.
         path  = fd.askdirectory(title = 'Choose where to save', initialdir = self.lastdir)
 
         # if user cancels
@@ -408,9 +438,11 @@ class App:
         
         # Make a path for the new folder where we'll be saving things - default behavior
         path = path+"/"+name
+
+        # Create the main folder
         Path(path).mkdir(parents=True, exist_ok=True)
 
-        #get the args we'll pass to the function
+        # Get the args we'll pass to the function
         self.retrieve_input_kwargs()
         export_args = get_export_args(**self.kwargs)
         export_args["flat"] = flat
@@ -418,7 +450,7 @@ class App:
         # Call external save function
         result = process_psd(psd, name, path, **export_args)
         
-        # update status bar
+        # Update status bar
         if result == True:
             self.status_bar.config(text="Exported "+psd_name+" at "+path+"/" )
             
@@ -426,28 +458,6 @@ class App:
             self.status_bar.config(text=result)
         
         self.master.update_idletasks()
-
-    def show_tree(self):
-        """Function to count psd layers and folders"""
-
-        #use self.kwargs to access the psd file
-        psd, psd_name, *_ = self.kwargs["file"].values()
-
-        #update status bar
-        self.status_bar.config(text="Opening Layer structure...")
-        self.master.update_idletasks()
-
-
-        #Update status bar
-        self.status_bar.config(text="Done!")
-        self.master.update_idletasks()
-
-        #Update PSD info
-        self.psdinfo.config(state=tk.NORMAL)
-        self.psdinfo.insert(tk.END,get_repr(psd))
-        self.psdinfo.config(state=tk.DISABLED)
-
-        self.right_frame.config(text=str(psd_name))
 
                
 def main():
