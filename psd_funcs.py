@@ -9,6 +9,14 @@ import re
 #  PSD Processing
 
 class ExportableImg():
+    """
+    Docstring for ExportableImg
+    
+    :var export_args: Description
+    :vartype export_args: Any
+    :var image: Description
+    :vartype image: Any
+    """
     def __init__(self, image: Layer | PSDImage, name: str, path: str, ext= ".png", **kwargs):
         self.image   = image
         self.name    = name
@@ -82,7 +90,7 @@ class ExportableImg():
                     og_size = export_args["canvas_size"]
                     w_scale = get_width_scale(og_size,int(export_args["width"]))
                     h_scale = get_height_scale(og_size,int(export_args["height"]))
-                    print("og size: ", og_size, " image size: ", image.size, "saved W x H: ", export_args["width"], "x", export_args["height"])
+                    
                     new_size = tuple([int(round(w_scale*image.size[0])),int(round(h_scale*image.size[1]))])
                 
                 
@@ -102,6 +110,7 @@ class ExportableImg():
         return f"Failed to export {self.name}"
 
 def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
+    #TODO: improve docstrings
     """Processes PSD (but also layer groups!)"""
 
     # if we're flattening
@@ -246,6 +255,7 @@ def composite_alpha(layer,alpha,canvas_size) -> Image.Image|None:
 
     return image
 
+# other aux ----  
 def get_height_scale(og_size,new_height)->float:
     """returns height scale"""
     return get_scale(og_size,height=new_height)
@@ -253,7 +263,7 @@ def get_height_scale(og_size,new_height)->float:
 def get_width_scale(og_size,new_width)->float:
     """returns width scale"""
     return get_scale(og_size,width=new_width)
-    
+     
 def get_scale(size:tuple[int,int], width=None, height=None)-> float:
     """returns a float that corresponds what % of the og width/heigh is the given width/height"""
     ogw, ogh = size
@@ -262,8 +272,75 @@ def get_scale(size:tuple[int,int], width=None, height=None)-> float:
     elif height:
         return height/ogh
     return 1.0
+
+def size_convert(size:tuple[int,int],input:tuple[int,int],kind:str="%") -> tuple[int,int]:
+    """Convert from % to px or viceversa"""
+    w, h     = input
+
+    # Converting to pixels, meaning I must have been given px
+    if kind == "px":
+        nw = get_resize(size, width = w, convert = True)
+        nh = get_resize(size, height= h, convert = True)
+
+    # converting to %, so i assume I was given px
+    else:
+        nw = get_resize(size, width=w, kind="px", convert=True)
+        nh = get_resize(size, height=h, kind="px", convert=True)
+
+    return (nw,nh)
+
+def get_resize(size:tuple[int,int], kind:str="%", **kwargs) -> int:
+    """Returns correct size. Needs h or w, otherwise raises an error."""
+    ogw, ogh = size
+    ratio    = ogw/ogh
+    w,h      = kwargs.get("width", None),kwargs.get("height", None)
+    convert  = kwargs.get("convert",False)
+
+    if w == None and h == None:
+        raise ValueError("No value provided for neither W nor H")
+    # What are we trying to do?
+
+    # We're converting from % to px and viceversa
+    if convert:
+        # if we're given %, we need to convert to px
+        if kind == "%":
+            if w:
+                return round(ogw*w/100)
+            elif h:
+                return round(ogh*h/100)
+
+        # if we're given px, convert to %
+        else:
+            if w:
+                return w/ogw*100
+            elif h:
+                return h/ogh*100
+        
+
+    # if we're not converting, we want the value not provided. Only needed for keepratio.
+    else:
+        # %h = %w, so return the same value given.
+        if kind == "%":
+            return w if w else h #type:ignore
+        # here we need to calculate the value not given by using the ratio
+        else:
+            # if given width, return height
+            if w:
+                return round(w/ratio)
+            # if given height, return width
+            elif h:
+                return round(ratio*h)
+
+    # if we're not converting and not keeping ratio, error.
+    return -1
+
 #--------------------
 # GUI Integration
+
+def get_psd_ratio(psd:PSDImage)->float:
+    """return the image ratio (width/height)"""
+    size = psd.size
+    return size[0]/size[1]
 
 def get_repr(psd:PSDImage)->str:
     """PSD Layer structure as a string"""

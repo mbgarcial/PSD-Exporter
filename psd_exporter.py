@@ -8,26 +8,11 @@ import tkinter.scrolledtext as scrolledtext
 from PIL import ImageTk
 
 
-#TODO NEXT:
-
-# - Resize!!
-
-# - Make widget size bigger to fit the window
-
-#-------------------------------------------------------------------------------------------
-# This version shows non-expandable tree on opening, and has buttons to export layers.
-# Default behavior is:
-#       - export layers trimmed of blank pixels OR document size OR visible PSD size
-#       - ignore invisible layers
-#       - ignore clipping layers when exporting, and apply them to layers that have them
-#       - apply masks to layers (NOT GROUPS) that have them
-#       - create new folders for groups and export their contents
-#       - if a group has a mask, apply it to all its children.
-#       - crop layer/group's children to mask size
-#-------------------------------------------------------------------------------------------
 # CREDITS:
 # How to add an image in tkinter: https://www.geeksforgeeks.org/python/how-to-add-an-image-in-tkinter/
 # Save pil image with saveasfile tkinter: https://www.daniweb.com/programming/software-development/threads/520677/how-to-save-the-edited-photo-tkinter-as-jpg-with-asksaveasfilename#:~:text=Dani%20AI,image%20as...'%2C
+# tkinter how to trace (GeeksforGeeks), how to get the focused widget https://stackoverflow.com/questions/41291779/how-to-get-widget-name-in-event
+
 
 class App:
     """Configures and adds widgets to a tk window. Also handles functions that are passed to said widgets."""
@@ -43,12 +28,13 @@ class App:
         self.height = int(geometry.split("x", 1)[1].split("+")[0])
 
         # These are to pass stuff around the gui and the external functions
-        self.args    = list()
         self.kwargs  = dict()
         self.lastdir = '/'
 
         # Input Validation for fields that take only numbers
         vcmd = (master.register(self.validate_numbers))
+
+        # These are all the GUI Items--------------------------
 
         # Frames & Status Bar
         self.right_frame  = tk.LabelFrame(self.master, text="PSD layers", padx=5, height=self.height-40, width=int(self.width/2)-10 )
@@ -95,13 +81,22 @@ class App:
         # Resize
         self.resize_frame = tk.LabelFrame(self.left_frame, text="Size", padx=5)
         # Width input
-        self.width_input = tk.StringVar(value="100")
-        self.width_input_entry = tk.Entry(self.resize_frame, textvariable = self.width_input, width=5, validate="all", validatecommand=(vcmd, '%P'))
-        
+        self.width_input = tk.IntVar(value=100, name="width_input")
+        self.width_input_entry = tk.Entry(self.resize_frame, name="w_entry", textvariable = str(self.width_input), width=5, validate="all", validatecommand=(vcmd, '%P')) # type: ignore
+
         # height input
-        self.height_input = tk.StringVar(value="100")
-        self.height_input_entry = tk.Entry(self.resize_frame, textvariable = self.width_input, width=5,validate="all", validatecommand=(vcmd, '%P'))
-        
+        self.height_input = tk.IntVar(value=100, name="height_input")
+        self.height_input_entry = tk.Entry(self.resize_frame, name="h_entry", textvariable = str(self.height_input), width=5,validate="all", validatecommand=(vcmd, '%P')) # type: ignore
+       
+        # binding the entry fields
+        self.resize_focus = tk.StringVar(value="", name="resize_focus")
+        self.width_input_entry.bind("<FocusIn>",self.resize_set_focus) #lambda evt, i=i, j=j: self.method_calling(i, j)
+        self.height_input_entry.bind("<FocusIn>",self.resize_set_focus)
+
+        # registering the variable observers
+        self.width_input.trace_add('write', self.resize_callback)
+        self.height_input.trace_add('write', self.resize_callback)
+
         # Ratio checkbox
         self.aspect_ratio = tk.BooleanVar(value=True)
         self.aspect_ratio_check = ttk.Checkbutton(self.resize_frame, text = "maintain aspect ratio", variable=self.aspect_ratio, onvalue=True, offvalue=False, command=self.toggle_aspect_ratio)
@@ -119,6 +114,9 @@ class App:
         #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 300px wide (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
         #⚠️ Export at 500 px height
         #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 500px height (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
+
+    #----------------------------------------- 
+    # Packing Export GUI
 
     def show_export_gui(self):
         """Shows exporting gui"""
@@ -141,87 +139,157 @@ class App:
         self.width_input_entry.grid(row = 1, column = 1, pady=1, sticky=tk.W)
         tk.Label(self.resize_frame, text="x H:").grid(row = 1, column = 2, pady=1, sticky=tk.W)
         self.height_input_entry.grid(row = 1, column = 3, pady=1, sticky=tk.W)
-        self.height_input_entry.config(state="disabled")
+        #self.height_input_entry.config(state="disabled")
         self.resize_type_menu.grid(row = 1, column = 4, pady=1, sticky=tk.W)
         self.aspect_ratio_check.grid(row = 2, column = 0, pady=1,columnspan=4)
 
-    def percent_pixel_switch(self,choice):
-        """switches between percent and pixel entries."""
-        kind = self.resize_type.get()
-        #print("Pixel to percent switch!!", choice)
+    # METHODS used inside the app ----
 
-        # if we're not changing anything, don't do anything.
-        if kind == self.kwargs["kind"]:
-            return
-        
-        nw, nh = str(100),str(100)
-        
-        # og size
-        ow, oh = self.kwargs["file"]["psd_size"]
-        # get w & h values from input
-        iw,ih = self.width_input.get(), self.height_input.get() 
-        
-        # if we're changing from px to %:
-        if kind == "%":
-            # get the % from og
-            nw = round((100/ow)*float(iw))
-            nh = round((100/ow)*float(ih))
-            
-        # if we're changing from % input to pixels
-        elif kind == "px":
-            # multiply og size with input %
-            nw, nh = int(ow*float(iw)/100), int(oh*float(ih)/100)     
+    def resize_set_focus(self,event):
+        """Callback for when a widget is focused, sets resize_focus to the name of the widget."""
+        name = str(event.widget).split(".")[-1]
+        self.resize_focus.set(name)
 
-        # save kind
-        self.kwargs["kind"] = kind
-        # set vars to new values
-        self.width_input.set(str(nw))
-        self.height_input.set(str(nh)) 
-        
-    def get_psd_ratio(self) -> float:
-        """get the aspect ratio"""
-        psd = self.kwargs.get("file",None)
-
-        if not psd:
-            return 1.0
-
-        return psd.size[0]/psd.size[1]
-    
     def validate_numbers(self,P):
         """
         Validation function to allow only digits and deletion.
         %P represents the value the text will have if the change is allowed.
         """
-        if P.isdigit() or P == "":
+        if P.isdigit():
             return True
         else:
             return False
 
+    def reset_variables(self):
+        """Resets all 'screen' variables to their default values."""
+        self.ignore_invisible.set(True)
+        self.trim_to_mask.set(False)
+        self.trim.set("all")
+        self.resize_type.set("%")
+        self.width_input.set(100)
+        self.height_input.set(100)
+        self.aspect_ratio.set(True)
+
+    # defining the callback function (observer) for when variable changes
+    def resize_callback(self, var, *args):
+        """Observer for size input that modifies the value not being edited in real time"""
+
+        width  = self.width_input.get()
+        height = self.height_input.get()
+        keep   = self.aspect_ratio.get()
+        kind   = self.resize_type.get()
+        focus  = self.resize_focus.get()
+
+        og_size = self.kwargs["file"]["psd_size"]
+
+        #check if aspect ratio is selected, otherwise do nothing.
+        if keep:
+            # if we're in %, make sure height and width are the same
+            if kind == "%":
+                self.height_input.set(width)
+                
+            # if we're in pixels
+            else:
+                if var == "width_input" and focus == "w_entry":
+                    self.height_input.set(get_resize(og_size, kind="px", width=width))
+
+
+                elif var == "height_input" and focus == "h_entry":
+                    self.width_input.set(get_resize(og_size, kind="px", height=height))
+
+
+    def percent_pixel_switch(self,choice):
+        """switches between percent and pixel entries."""
+        
+        kind = self.resize_type.get()
+
+        # if we're not changing anything, don't do anything.
+        if kind == self.kwargs["kind"]:
+            return
+        
+        # save kind
+        self.kwargs["kind"] = kind
+
+        # og size & size from input
+        og_size    = self.kwargs["file"]["psd_size"]
+        input_size = (int(self.width_input.get()), int(self.height_input.get() ))
+
+        #convert the input
+        nw, nh = size_convert(og_size,input_size,kind=kind)
+
+        # set vars to new values
+        self.width_input.set(int(nw))
+        self.height_input.set(int(nh)) 
+
+        
+    def toggle_aspect_ratio(self):
+        """Activates 'keep aspect ratio', 
+        which makes sure that when one value is altered, 
+        the other is altered in proportion."""
+
+        keep  = self.aspect_ratio.get() # keep aspect ratio toggle
+        kind  = self.resize_type.get()  # px / % toggle
+        focus = self.resize_focus.get() # last field focused
+        
+        # if we're not changing it, don't do anything
+        if keep == self.kwargs["keep_aspect_ratio"]:
+            return
+        
+        # if activating aspect ratio
+        if keep:
+            # if we're using %, copy the number from whatever was focused last
+            if kind == "%": 
+                if focus == "w_entry":
+                    self.height_input.set(self.width_input.get())
+                else:
+                    self.width_input.set(self.height_input.get())
+                
+            # if we're doing pixels, also use the last focus as source, and make sure height entry is tracking height and not width.
+            else:
+
+                og_size = self.kwargs["file"]["psd_size"]
+
+                if focus == "w_entry":        
+                    self.height_input.set(get_resize(og_size, kind="px", width=self.width_input.get()))
+                else:
+                    self.width_input.set(get_resize(og_size, kind="px", height=self.height_input.get()))
+
+        
+        # if we're disabling ratio, make sure to copy % still before doing anything.
+        elif kind == "%": 
+            self.height_input.set(self.width_input.get())
+                        
+        # save it.
+        self.kwargs["keep_aspect_ratio"] = keep
+
     def retrieve_input_kwargs(self):
         """retrieves the values from input fields and stores them in kwargs when exporting"""
+        
         # get og size
         og_size = self.kwargs["file"]["psd_size"]
 
         # retrieve input_w, input_h, kind and aspect ratio
-        self.kwargs["kind"] = self.resize_type.get()
         iw,ih = self.width_input.get(), self.height_input.get() 
+        self.kwargs["kind"] = self.resize_type.get()
         self.kwargs["keep_aspect_ratio"] = self.aspect_ratio.get()
+
+        # if w and/or h are 0, set them to 1
+        iw = 1.0 if iw in ["0",""] else float(iw)
+        ih = 1.0 if ih in ["0",""] else float(ih) 
 
         # If we keep aspect ratio
         if self.kwargs["keep_aspect_ratio"]:
             
             # if we were retrieving %, save that as scale
             if self.kwargs["kind"] == "%":
-                self.kwargs["scale"] = float(iw)/100
-                #print("retrieving scale when kind is %:",self.kwargs["scale"])
-
-            # if we were retrieving px, get the % by multiplying the og size and the new size (?)
+                self.kwargs["scale"] = iw/100
+                
+            # if we were retrieving px, get the % by dividing new size and og size
             else:
-                self.kwargs["scale"] = ((float(iw)/og_size[0]))
+                self.kwargs["scale"] = iw/og_size[0]
 
-                #print("retrieving scale when kind is px:",self.kwargs["scale"])
-
-            self.kwargs["width"], self.kwargs["height"] = [i*self.kwargs["scale"] for i in og_size]
+            # save new height and width. This will be the new max canvas size.
+            self.kwargs["width"], self.kwargs["height"] = [i * self.kwargs["scale"] for i in og_size]
 
         # if we're not keeping the aspect ratio...
         else:
@@ -230,26 +298,13 @@ class App:
 
             # if we were retrieving %, multiply that to the og sizes and store them.
             if self.kwargs["kind"] == "%":
-                self.kwargs["width"]  = int(float(iw)/100*og_size[0])
-                self.kwargs["height"] = int(float(ih)/100*og_size[1])
+                self.kwargs["width"]  = get_resize(og_size, width  = iw, convert = True)
+                self.kwargs["height"] = get_resize(og_size, height = ih, convert = True)
 
             # if we were retrieving px, just save those.
             else:
                 self.kwargs["width"], self.kwargs["height"] = int(iw), int(ih)
         
-
-    def toggle_aspect_ratio(self):
-        val = self.aspect_ratio.get()
-        self.kwargs["keep_aspect_ratio"] = val
-        if val:
-            # if keeping aspect ratio, disable height.
-            self.height_input_entry.config(state="disabled",disabledbackground="light gray", textvariable=self.width_input)
-            self.height_input.set(self.width_input.get())
-        else:
-            self.height_input.set(self.width_input.get())
-            self.height_input_entry.config(state="normal",textvariable=self.height_input)
-
-
     def toggle_trim(self):
         """Toggles several kwargs related to trimming/cropping"""
         val = self.trim.get()
@@ -287,9 +342,12 @@ class App:
             result = self.open_psd(filename)
             #if reading the file was successful, assign its result to the app to pass it to other funcs.
             if result:
+                self.kwargs = dict()
                 self.kwargs["file"] = result
-                self.kwargs["kind"] = "%"
                 self.kwargs["width"], self.kwargs["height"] = result["psd_size"]
+                self.kwargs["kind"] = "%"
+                self.kwargs["keep_aspect_ratio"] = True
+                self.reset_variables()
                 self.show_tree()
         
     def open_psd(self, filename):
@@ -398,7 +456,6 @@ def main():
     w=700
     h=500
     app = App(root,f"{w}x{h}+400+300")
-
 
     # run the application
     root.mainloop()
