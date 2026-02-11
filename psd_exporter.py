@@ -179,7 +179,41 @@ class App:
         self.psdinfo.config(state=tk.NORMAL)
         self.psdinfo.delete("1.0", tk.END) #???
         self.psdinfo.config(state=tk.DISABLED)
-    # METHODS used inside the app ----
+    
+    #--------------------------------
+    # METHODS used inside the app 
+    def add_to_selected(self,*layernames, flatten=False):
+        """function that adds layernames (from input field) to the selected list."""
+        
+        # first, make sure selected exists, and initialize it as an empty list if it doesn't
+        if not flatten:
+            selected = self.kwargs.get("selected",None)
+            if not selected:
+                self.kwargs["selected"] = []
+
+            # append the layernames to selected
+            for layer in layernames:
+                self.kwargs["selected"].append(layer)
+        else:
+            flatten = self.kwargs.get("flatten",None)
+            if not flatten:
+                self.kwargs["flatten"] = []
+
+            # append the layernames to flatten
+            for layer in layernames:
+                self.kwargs["flatten"].append(layer)
+    
+    def toggle_selected_action(self):
+        """toggles the action to execute with selected layers"""
+        action = self.kwargs.get("selected_action",None)
+        if not action:
+            self.kwargs["selected_action"] = None
+        
+        #retrieve the toggle here
+        toggle = None
+
+        self.kwargs["selected_action"] = toggle
+
 
     def resize_set_focus(self,event):
         """Callback for when a widget is focused, sets resize_focus to the name of the widget."""
@@ -346,7 +380,6 @@ class App:
         if filename:
             result = self.open_psd(filename)
         
-
     def kwargs_init(self,result):
         self.kwargs = dict()
         self.kwargs["file"] = result
@@ -446,6 +479,8 @@ class App:
         self.retrieve_input_kwargs()
         export_args = get_export_args(**self.kwargs)
         export_args["flat"] = flat
+        if flat:
+            export_args["flatten"].append("*")
 
         # Call external save function
         result = process_psd(psd, name, path, **export_args)

@@ -37,17 +37,17 @@ class ExportableImg():
         """returns filepath"""
         return self.path+"/"+self.name+self.ext
 
-    def get_ignore(self):
-        """returns if the file should be ignored or not"""
-        #TODO: add extra ignore conditions
+# def get_ignore(self):
+#     """returns if the file should be ignored or not"""
+#     # the extra ignore conditions are dealt with on process_psd itself, before we get to this point.
 
-        if not self.visible and getattr(self,"ignore_invisible",True):
-            return True
-        
-        if isinstance(self.image, Layer) and self.image.clipping:
-            return True
+#     if not self.visible and getattr(self,"ignore_invisible",True):
+#         return True
+    
+#     if isinstance(self.image, Layer) and self.image.clipping:
+#         return True
 
-        return False
+#     return False
     
     def get_args(self)-> dict:
         """returns a dictionary with relevant export kwargs"""
@@ -59,8 +59,8 @@ class ExportableImg():
         """Saves the image to the path with the extension given, if it's not ignored"""
         
         # if this should be ignored, move on.
-        if self.get_ignore():
-            return True
+        #if self.get_ignore():
+        #    return True
         
         # get export args
         export_args = self.get_args()
@@ -110,27 +110,39 @@ class ExportableImg():
         return f"Failed to export {self.name}"
 
 def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
-    #TODO: improve docstrings
-    """Processes PSD (but also layer groups!)"""
+    """Processes a PSD (and layer groups recursively), by going through all the layers/groups and exporting them"""
 
-    # if we're flattening
-    if kwargs.get("flat", False):
+    selected        = kwargs.get("selected", [])
+    flatten         = kwargs.get("flatten", [])
+    selected_action = kwargs.get("selected_action",None)
+    ignore_invisible= kwargs.get("ignore_invisible",True)
+
+    # if we're flattening, flatten the psd
+    if kwargs.get("flat", False) or "*" in flatten: 
         return ExportableImg(psd,name,path,**kwargs).save()
     
     # otherwise, iterate over layers
     for layer in psd:
+        # get what we should do with this layer
+        layer_action = what_do(layer,selected,flatten,selected_action)
 
-        # if it should be ignored via selection, etc, pass
-        if should_ignore_layer(layer,**kwargs):
+        # if it should be ignored, pass
+        if any([
+            not layer.visible and ignore_invisible,
+            layer.clipping,
+            layer_action == "ignore"
+            ]):
             pass
 
-        # if it's a single layer, or if it's a group that should get flattened:
-        elif not layer.is_group(): # or should_flatten(layer.name,**kwargs)
+        # if layer should be saved, save it
+        elif layer_action == "save":
             result = ExportableImg(layer,layer.name,path,**kwargs).save()
 
+            #if an error ocurred while saving, return it
             if result != True:
                 return result
 
+        # Otherwise, go into the thing because it has to be a group.
         else:
             # get the name
             group_name   = layer.name
@@ -147,22 +159,146 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 
             # if we have a mask, save it to apply it to its children
             if mask:
+                group_kwargs = process_mask(mask,group_kwargs)
 
-                # if we're trimming to mask, assign the mask bbox to the group's export bbox. This overrides canvas size and layer trimming.
-                if group_kwargs.get("trim_to_mask",False):
-                    group_kwargs["bbox"] = mask.bbox # type: ignore
-
-                # convert the mask to an alpha b/w image and store it
-                group_kwargs["alpha"] = create_alpha(mask, group_kwargs.get("canvas_size", (mask.bbox[2],mask.bbox[3])))
-                
-                # if we don't have a bbox, save the bbox as the mask bbox. We'll trim later when exporting.
-                if not group_kwargs.get("bbox", None):
-                    group_kwargs["bbox"] = mask.bbox # type: ignore
+            # if we are exporting the whole group, add "*" to selected
+            if layer_action == "export":
+                group_kwargs["selected"].append("*")
 
             # Process the group
             process_psd(layer, group_name, new_path, **group_kwargs) #type:ignore
 
     return True
+
+#---------
+
+def process_mask(mask,group_kwargs:dict)->dict:
+    """Helper of process_psd to process the mask of a group and save it in a dict to pass it down to its descendants"""
+    
+    # if we're trimming to mask, assign the mask bbox to the group's export bbox. 
+    # This overrides canvas size and layer trimming.
+    if group_kwargs.get("trim_to_mask",False):
+        group_kwargs["bbox"] = mask.bbox # type: ignore
+
+    # Convert the mask to an alpha b/w image and store it
+    group_kwargs["alpha"] = create_alpha(mask, group_kwargs.get("canvas_size", (mask.bbox[2],mask.bbox[3]))) #type:ignore
+    
+    # if we don't have a bbox, save the bbox as the mask bbox. We'll trim later when exporting.
+    if not group_kwargs.get("bbox", None):
+        group_kwargs["bbox"] = mask.bbox # type: ignore
+
+    return group_kwargs
+
+def what_do(layer:Layer|None, selected:list=[], flatten:list=[], what:str|None="export")->str:
+    """Determines what to do with a layer during processing, given a list of selected items, what to do with those selected items, and a list of layers to flatten."""
+    
+    if not layer:
+        return "ignore"
+    
+    if not selected:
+        what = None
+
+    layer_is_selected = is_selected(layer, selected)
+    
+    if what == "ignore" and layer_is_selected:
+        return "ignore"
+        
+    if layer.is_group():
+        if is_selected(layer,flatten) and not all([layer_is_selected, what == "ignore"]):
+            return "save"
+        
+        elif what == "export" and layer_is_selected:
+            return "export"
+        
+        return "pass"
+    
+    else:
+        if what =="export" and not layer_is_selected:
+            return "ignore"
+        return "save"
+
+def is_selected(layer:Layer|None, selected:list)->bool:
+    """Return if a layer is selected based off whatever is in the selected list (names, expressions and (layer,parent) tuples)"""
+    # abort if no layer given
+    if not layer or not selected:
+        return False
+    
+    # if the name is in the list
+    if any([layer.name in selected, 
+            (layer.name,layer.parent.name) in selected ]): #type:ignore
+        return True
+    
+    patterns = [i for i in selected if "*" in i]
+    if patterns:
+        match = re.search(get_regex(patterns), layer.name, flags=re.IGNORECASE)
+        
+        if match:
+            return True
+
+    return False
+    
+def get_regex(expressions:list)->str:
+    """converts a list of wildcard expressions into a regex string"""
+    rex=[]
+    for i in expressions:
+        
+        # Prefix, ie: "layer*""
+        if i.endswith("*") and not i.startswith("*"):
+            i = "^"+i[:-1]
+
+        # Suffix, ie: "*layer"
+        elif not i.endswith("*") and i.startswith("*"):            
+            i = i[1:]+"$"
+        
+        # Contains word, #ie: "*layer*"
+        elif i.endswith("*") and i.startswith("*"):
+            i = i.replace("*","")
+
+        # Exact name*, ie: "layer1"
+        else:
+            i = "^"+i+"$"
+
+        # Expressions with wildcard(s) in the middle, ie: "char_*_eye"
+        # Also catches all expressions that have * in the middle regardless if they have other * at the end or the beginning
+        #  like "*a*b", "a*b*" and "*a*b*"
+        if "*" in i:
+            i = i.replace("*",".*")
+
+        # append the regex conversion to list      
+        rex.append(i)
+        
+    # join all the regexes separated by "|"" and put the result inside "()"
+    return r"(" + "|".join(rex) + ")"
+
+def dummy_process(psd:PSDImage|Layer, selected:list=[], what:str|None=None, flatten:list=[]) -> list:
+    """Temp function to test logic before applying it to process_psd"""
+    filtered = []
+    
+    for layer in psd: #type:ignore
+        layer_action = what_do(layer,selected,flatten,what)
+        layer_append = (layer.name, layer.parent.name)
+
+        if layer_action == "save":
+            filtered.append(layer_append)
+        
+        elif layer_action == "ignore":
+            pass
+
+        elif layer.is_group(): 
+            if layer_action == "pass":
+                filtered = filtered + dummy_process(layer,selected,what,flatten)
+    
+            elif layer_action=="export":
+                filtered = filtered + dummy_process(layer,["*"],what,flatten)
+
+    return filtered
+
+def get_all_layernames(psd:PSDImage)->list:
+    """returns a list of *all* of the layer names in a file with their parents"""
+    layers = []
+    for layer in psd.descendants():
+        layers.append((layer.name,layer.parent.name)) #type: ignore
+    return layers
 
 #----------------------------------------------------------------
 # PSD Processing - aux
@@ -171,20 +307,6 @@ def check_image_exists(filepath)->bool:
     """Checks if an image file exists"""
     if Path(filepath).is_file():
         return True
-    return False
-
-def should_ignore_layer(layer:Layer,**kwargs):
-    """checks if a layer should be ignored"""
-
-    ignored = kwargs.get("ignored",[])
-
-    if (layer.name,layer.parent.name) in ignored: # type:ignore
-        return True
-    elif (layer.name,"") in ignored:
-        return True
-    elif layer.name in ignored:
-        return True
-    
     return False
 
 #----------------------------
@@ -445,7 +567,9 @@ def get_export_args(**kwargs) -> dict:
         "trim_to_visible"   : False,
         "scale"             : 1.0,
         "bbox"              : None,
-        "ignored"           : [],
+        "selected"          : [],
+        "selected_action"   : None,
+        "flatten"           : [],
         "keep_aspect_ratio" : True,
         "kind"              : "%",
         "height"            : 0,
