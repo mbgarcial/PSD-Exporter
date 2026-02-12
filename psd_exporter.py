@@ -34,6 +34,7 @@ class App:
 
         # Input Validation for fields that take only numbers
         vcmd = (master.register(self.validate_numbers))
+        vcmd2 = (master.register(self.validate_layerfilter))
 
         # These are all the GUI Items--------------------------
 
@@ -107,14 +108,20 @@ class App:
         self.resize_type = tk.StringVar(value="%")
         self.resize_type_menu = ttk.OptionMenu(self.resize_frame, self.resize_type, "%", *self.resize_type_choices, command=self.percent_pixel_switch)
 
-        #⚠️ TEMP
-        #self.scale_50 = tk.BooleanVar(value=False)
-        #⚠️ Export Resized!
-        #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Scale to 50% when exporting", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
-        #⚠️ Export at 300 px wide
-        #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 300px wide (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
-        #⚠️ Export at 500 px height
-        #self.scale_50_check = ttk.Checkbutton(self.left_frame, text = "Export at 500px height (maintain ratio)", variable=self.scale_50, onvalue=True, offvalue=False, command=self.toggle_scale_50)
+        # Filter
+        self.filter_frame = tk.LabelFrame(self.left_frame, text="Filter", padx=5)
+
+        #Filter variables
+        self.selected = tk.StringVar(value="",name="selected")
+        self.flatten = tk.StringVar(value="",name="flatten")
+        self.selected_action = tk.StringVar(value="export", name="selected_action")
+
+        #Input
+        self.selected_entry = tk.Entry(self.filter_frame, name="selected_entry", textvariable = self.selected, validate="all", validatecommand=(vcmd2, '%P'))
+        self.flatten_entry = tk.Entry(self.filter_frame, name="flatten_entry", textvariable = self.flatten, validate="all", validatecommand=(vcmd2, '%P'))
+        #Radio
+        self.ignore_selected_radio = ttk.Radiobutton(self.filter_frame, text = "Ignore selected", variable=self.selected_action, value="ignore", command=lambda:self.toggle_kwargs("selected_action"))
+        self.export_selected_radio = ttk.Radiobutton(self.filter_frame, text = "Export only selected", variable=self.selected_action, value="export", command=lambda:self.toggle_kwargs("selected_action"))
 
     #----------------------------------------- 
     # Packing Export GUI
@@ -144,6 +151,20 @@ class App:
         self.height_input_entry.grid(row = 1, column = 3, pady=1, sticky=tk.W)
         self.resize_type_menu.grid(row = 1, column = 4, pady=1, sticky=tk.W)
         self.aspect_ratio_check.grid(row = 2, column = 0, pady=1,columnspan=4)
+
+        #row 8
+        self.filter_frame.grid(row=8,column = 0, pady=2, sticky=tk.W)
+        tk.Label(self.filter_frame, text="Separate names with commas. Can use *.").grid(row = 0, column = 0, pady=1, sticky=tk.W,columnspan=4)
+        tk.Label(self.filter_frame, text="Select").grid(row = 1, column = 0, pady=1, sticky=tk.W)
+        self.selected_entry.grid(row = 1, column = 1, pady=1, sticky=tk.W)
+        tk.Label(self.filter_frame, text="Flatten").grid(row = 2, column = 0, pady=1, sticky=tk.W)
+        self.flatten_entry.grid(row = 2, column = 1, pady=1, sticky=tk.W)
+        self.ignore_selected_radio.grid(row = 3, column = 0, pady=1, sticky=tk.W,columnspan=4)
+        self.export_selected_radio.grid(row = 4, column = 0, pady=1, sticky=tk.W,columnspan=4)
+
+
+
+
 
     def show_thumb(self, thumb):
         """Shows the thumbnail"""
@@ -182,37 +203,17 @@ class App:
     
     #--------------------------------
     # METHODS used inside the app 
-    def add_to_selected(self,*layernames, flatten=False):
-        """function that adds layernames (from input field) to the selected list."""
-        
-        # first, make sure selected exists, and initialize it as an empty list if it doesn't
-        if not flatten:
-            selected = self.kwargs.get("selected",None)
-            if not selected:
-                self.kwargs["selected"] = []
 
-            # append the layernames to selected
-            for layer in layernames:
-                self.kwargs["selected"].append(layer)
-        else:
-            flatten = self.kwargs.get("flatten",None)
-            if not flatten:
-                self.kwargs["flatten"] = []
+    def retrieve_filter_kwargs(self):
+        # get the vars
+        selected = separate_filters(self.selected.get())#["*layer*"]
+        flatten = separate_filters(self.flatten.get())
+        selected_action = self.selected_action.get()
+        selected_action = selected_action if selected_action in ["ignore","export"] else None
 
-            # append the layernames to flatten
-            for layer in layernames:
-                self.kwargs["flatten"].append(layer)
-    
-    def toggle_selected_action(self):
-        """toggles the action to execute with selected layers"""
-        action = self.kwargs.get("selected_action",None)
-        if not action:
-            self.kwargs["selected_action"] = None
-        
-        #retrieve the toggle here
-        toggle = None
-
-        self.kwargs["selected_action"] = toggle
+        self.kwargs["selected"]=selected
+        self.kwargs["flatten"]=flatten
+        self.kwargs["selected_action"] = selected_action
 
 
     def resize_set_focus(self,event):
@@ -229,6 +230,14 @@ class App:
             return True
         else:
             return False
+        
+    def validate_layerfilter(self,text):
+        """Validation function to allow only digits, letters, underscores and commas"""
+        if text == "":
+            return True
+        match = re.fullmatch(r"[a-zA-Z0-9 _,*-><]+",text)
+        return match is not None
+
 
     def reset_variables(self):
         """Resets all 'screen' variables to their default values."""
@@ -414,6 +423,9 @@ class App:
     def retrieve_input_kwargs(self):
         """retrieves ALL the relevant values from input fields, radiobuttons and checkboxes and stores them in kwargs for exporting"""
         
+        # retrieve filters
+        self.retrieve_filter_kwargs()
+
         # get og size
         og_size = self.kwargs["file"]["psd_size"]
 
@@ -499,7 +511,7 @@ def main():
     # create the root window
     root = tk.Tk()
     w=700
-    h=500
+    h=600
     app = App(root,f"{w}x{h}+400+300")
 
     # run the application

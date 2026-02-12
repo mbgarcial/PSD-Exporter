@@ -36,18 +36,6 @@ class ExportableImg():
     def get_savepath(self):
         """returns filepath"""
         return self.path+"/"+self.name+self.ext
-
-# def get_ignore(self):
-#     """returns if the file should be ignored or not"""
-#     # the extra ignore conditions are dealt with on process_psd itself, before we get to this point.
-
-#     if not self.visible and getattr(self,"ignore_invisible",True):
-#         return True
-    
-#     if isinstance(self.image, Layer) and self.image.clipping:
-#         return True
-
-#     return False
     
     def get_args(self)-> dict:
         """returns a dictionary with relevant export kwargs"""
@@ -57,10 +45,6 @@ class ExportableImg():
 
     def save(self) -> bool|str:
         """Saves the image to the path with the extension given, if it's not ignored"""
-        
-        # if this should be ignored, move on.
-        #if self.get_ignore():
-        #    return True
         
         # get export args
         export_args = self.get_args()
@@ -120,18 +104,14 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
     # if we're flattening, flatten the psd
     if kwargs.get("flat", False) or "*" in flatten: 
         return ExportableImg(psd,name,path,**kwargs).save()
-    
+
     # otherwise, iterate over layers
     for layer in psd:
         # get what we should do with this layer
-        layer_action = what_do(layer,selected,flatten,selected_action)
+        layer_action = what_do(layer,selected,flatten,selected_action, ignore_invisible=ignore_invisible)
 
         # if it should be ignored, pass
-        if any([
-            not layer.visible and ignore_invisible,
-            layer.clipping,
-            layer_action == "ignore"
-            ]):
+        if layer_action == "ignore":
             pass
 
         # if layer should be saved, save it
@@ -163,7 +143,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 
             # if we are exporting the whole group, add "*" to selected
             if layer_action == "export":
-                group_kwargs["selected"].append("*")
+                group_kwargs["selected"]=["*"]
 
             # Process the group
             process_psd(layer, group_name, new_path, **group_kwargs) #type:ignore
@@ -189,7 +169,7 @@ def process_mask(mask,group_kwargs:dict)->dict:
 
     return group_kwargs
 
-def what_do(layer:Layer|None, selected:list=[], flatten:list=[], what:str|None="export")->str:
+def what_do(layer:Layer|None, selected:list=[], flatten:list=[], what:str|None="export", ignore_invisible=True, ignore_clippings=True)->str:
     """Determines what to do with a layer during processing, given a list of selected items, what to do with those selected items, and a list of layers to flatten."""
     
     if not layer:
@@ -200,7 +180,11 @@ def what_do(layer:Layer|None, selected:list=[], flatten:list=[], what:str|None="
 
     layer_is_selected = is_selected(layer, selected)
     
-    if what == "ignore" and layer_is_selected:
+    if any([
+        what == "ignore" and layer_is_selected,
+        ignore_invisible and not layer.visible,
+        ignore_clippings and layer.clipping
+        ]):
         return "ignore"
         
     if layer.is_group():
@@ -479,6 +463,12 @@ def get_psd_dir(filename):
     if match:
         return match.group(1)
     return '/'
+
+def separate_filters(str, sep=",") -> list:
+    """separates a big str into a list"""
+    #first, separate everything by commas
+    l = str.split(sep)
+    return [i.strip() for i in l if i not in [""," "]]
 
 #----------------------------------
 # Tree
