@@ -72,10 +72,11 @@ class App:
         # Trim & Crop behavior
         self.trim_frame = tk.LabelFrame(self.left_frame, text="Trim...", padx=5)
 
-        # trim transparent checkbox
+        # trim 
         self.trim = tk.StringVar(value="all")
+        # trim transparent for each layer.
         self.trim_layers_radio = ttk.Radiobutton(self.trim_frame, text = "Trim transparent parts (each layer)", variable=self.trim, value="all", command=self.toggle_trim)
-        # trim full psd
+        # trim visible full psd
         self.trim_to_visible_radio = ttk.Radiobutton(self.trim_frame, text = "Trim transparent parts (full image)", variable=self.trim, value="visible",  command=self.toggle_trim)
         # do not trim
         self.dont_trim_radio = ttk.Radiobutton(self.trim_frame, text = "Don't trim (export at canvas size)", variable=self.trim, value="canvas",  command=self.toggle_trim)
@@ -115,6 +116,7 @@ class App:
         self.selected = tk.StringVar(value="",name="selected")
         self.flatten = tk.StringVar(value="",name="flatten")
         self.selected_action = tk.StringVar(value="export", name="selected_action")
+        self.flatten_action = tk.StringVar(value="flatten", name="flatten_action")
 
         #Input
         self.selected_entry = tk.Entry(self.filter_frame, name="selected_entry", textvariable = self.selected, validate="all", validatecommand=(vcmd2, '%P'))
@@ -122,27 +124,32 @@ class App:
         #Radio
         self.ignore_selected_radio = ttk.Radiobutton(self.filter_frame, text = "Ignore selected", variable=self.selected_action, value="ignore", command=lambda:self.toggle_kwargs("selected_action"))
         self.export_selected_radio = ttk.Radiobutton(self.filter_frame, text = "Export only selected", variable=self.selected_action, value="export", command=lambda:self.toggle_kwargs("selected_action"))
+        self.ignore_flatselected_radio = ttk.Radiobutton(self.filter_frame, text = "Flatten selected", variable=self.flatten_action, value="flatten", command=lambda:self.toggle_kwargs("flatten_action"))
+        self.export_flatselected_radio = ttk.Radiobutton(self.filter_frame, text = "Flaten all BUT selected", variable=self.flatten_action, value="ignore", command=lambda:self.toggle_kwargs("flatten_action"))
 
     #----------------------------------------- 
     # Packing Export GUI
 
     def show_export_gui(self):
         """Shows exporting gui"""
-        # row 2
+        # row 2: EXPORT BUTTON
         self.export_button.grid(row = 2, column = 0, pady = 2)
         
         # row 3-5
-        tk.Label(self.left_frame, text="").grid(row = 3, column = 0, pady=1, sticky=tk.W) # <- temp
+        tk.Label(self.left_frame, text="").grid(row = 3, column = 0, pady=1, sticky=tk.W) # <- temp space
         self.ignore_invisible_check.grid(row = 4, column = 0, pady=2, sticky=tk.W)
         self.trim_to_mask_check.grid(row = 5, column = 0, pady=1, sticky=tk.W)
         
-        # row 6
+        # row 6: TRIM
         self.trim_frame.grid(row = 6, column = 0, pady=2, sticky=tk.W)
+        # trim to layer
         self.trim_layers_radio.grid(row = 1, column = 0, pady=1, sticky=tk.W)
+        # trim to visible
         self.trim_to_visible_radio.grid(row = 2, column = 0, pady=1, sticky=tk.W)
+        # export everything at full canvas size
         self.dont_trim_radio.grid(row = 3, column = 0, pady=1, sticky=tk.W)
         
-        # row 7
+        # row 7: Resize
         self.resize_frame.grid(row=7,column = 0, pady=2, sticky=tk.W)
 
         tk.Label(self.resize_frame, text="W:").grid(row = 1, column = 0, pady=1, sticky=tk.W)
@@ -152,18 +159,18 @@ class App:
         self.resize_type_menu.grid(row = 1, column = 4, pady=1, sticky=tk.W)
         self.aspect_ratio_check.grid(row = 2, column = 0, pady=1,columnspan=4)
 
-        #row 8
+        #row 8: Filter
         self.filter_frame.grid(row=8,column = 0, pady=2, sticky=tk.W)
+        
         tk.Label(self.filter_frame, text="Separate names with commas. Can use *.").grid(row = 0, column = 0, pady=1, sticky=tk.W,columnspan=4)
         tk.Label(self.filter_frame, text="Select").grid(row = 1, column = 0, pady=1, sticky=tk.W)
         self.selected_entry.grid(row = 1, column = 1, pady=1, sticky=tk.W)
-        tk.Label(self.filter_frame, text="Flatten").grid(row = 2, column = 0, pady=1, sticky=tk.W)
-        self.flatten_entry.grid(row = 2, column = 1, pady=1, sticky=tk.W)
-        self.ignore_selected_radio.grid(row = 3, column = 0, pady=1, sticky=tk.W,columnspan=4)
-        self.export_selected_radio.grid(row = 4, column = 0, pady=1, sticky=tk.W,columnspan=4)
-
-
-
+        self.ignore_selected_radio.grid(row = 2, column = 0, pady=1, sticky=tk.W,columnspan=4)
+        self.export_selected_radio.grid(row = 3, column = 0, pady=1, sticky=tk.W,columnspan=4)
+        tk.Label(self.filter_frame, text="Flatten").grid(row = 4, column = 0, pady=1, sticky=tk.W)
+        self.flatten_entry.grid(row = 4, column = 1, pady=1, sticky=tk.W)
+        self.ignore_flatselected_radio.grid(row = 5, column = 0, pady=1, sticky=tk.W,columnspan=4)
+        self.export_flatselected_radio.grid(row = 6, column = 0, pady=1, sticky=tk.W,columnspan=4)
 
 
     def show_thumb(self, thumb):
@@ -209,11 +216,14 @@ class App:
         selected = separate_filters(self.selected.get())#["*layer*"]
         flatten = separate_filters(self.flatten.get())
         selected_action = self.selected_action.get()
+        flatten_action = self.flatten_action.get()
         selected_action = selected_action if selected_action in ["ignore","export"] else None
+        flatten_action = flatten_action if flatten_action in ["ignore","flatten"] else None
 
         self.kwargs["selected"]=selected
         self.kwargs["flatten"]=flatten
         self.kwargs["selected_action"] = selected_action
+        self.kwargs["flatten_action"] = flatten_action
 
 
     def resize_set_focus(self,event):
@@ -357,14 +367,17 @@ class App:
         trim = self.trim.get()
 
         if trim == "all":
+            # trims each layer's transparency
             self.kwargs["trim_layers"]     = True
             self.kwargs["trim_to_visible"] = False
 
         elif trim == "visible":
+            # saves visible bbox of WHOLE PSD and saves each layer to that size
             self.kwargs["trim_layers"]     = False
             self.kwargs["trim_to_visible"] = True
 
         else:
+            # Do not trim transparency
             self.kwargs["trim_layers"]     = False
             self.kwargs["trim_to_visible"] = False
 
@@ -511,7 +524,7 @@ def main():
     # create the root window
     root = tk.Tk()
     w=700
-    h=600
+    h=700
     app = App(root,f"{w}x{h}+400+300")
 
     # run the application

@@ -99,6 +99,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
     selected        = kwargs.get("selected", [])
     flatten         = kwargs.get("flatten", [])
     selected_action = kwargs.get("selected_action",None)
+    flatten_action  = kwargs.get("flatten_action",None)
     ignore_invisible= kwargs.get("ignore_invisible",True)
 
     # if we're flattening, flatten the psd
@@ -108,7 +109,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
     # otherwise, iterate over layers
     for layer in psd:
         # get what we should do with this layer
-        layer_action = what_do(layer,selected,flatten,selected_action, ignore_invisible=ignore_invisible)
+        layer_action = what_do(layer,selected,flatten,selected_action, flatten_action, ignore_invisible=ignore_invisible)
 
         # if it should be ignored, pass
         if layer_action == "ignore":
@@ -141,7 +142,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
             if mask:
                 group_kwargs = process_mask(mask,group_kwargs)
 
-            # if we are exporting the whole group, add "*" to selected
+            # if we are exporting the whole group, add "*" to selected so it treats everything as selected,
             if layer_action == "export":
                 group_kwargs["selected"]=["*"]
 
@@ -169,41 +170,62 @@ def process_mask(mask,group_kwargs:dict)->dict:
 
     return group_kwargs
 
-def what_do(layer:Layer|None, selected:list=[], flatten:list=[], what:str|None="export", ignore_invisible=True, ignore_clippings=True)->str:
+def what_do(layer:Layer|None, selected:list=[], flatten:list=[], selected_action:str|None="export", flatten_action:str|None="flatten",ignore_invisible=True, ignore_clippings=True)->str:
     """Determines what to do with a layer during processing, given a list of selected items, what to do with those selected items, and a list of layers to flatten."""
     
+    # First of all, if layer is empty, or not a layer, ignore it right away.
     if not layer:
         return "ignore"
     
-    if not selected:
-        what = None
-
+    # First, check if the layer qualifies as selected.
     layer_is_selected = is_selected(layer, selected)
     
+    # Now, check if we have selection or flatten dierectives. If not, then set their respective actions to None.
+    selected_action = selected_action if selected else None
+    flatten_action  = flatten_action if flatten else None
+    
+    # With that, ignore the layer if fits our ignoring criteria.
     if any([
-        what == "ignore" and layer_is_selected,
+        selected_action == "ignore" and layer_is_selected,
         ignore_invisible and not layer.visible,
         ignore_clippings and layer.clipping
         ]):
         return "ignore"
         
-    if layer.is_group():
-        if is_selected(layer,flatten) and not all([layer_is_selected, what == "ignore"]):
-            return "save"
+    # If our layer is a single layer that wasn't already ignored
+    if not layer.is_group():
+        # if it's NOT selected and we're exporting only the selected, ignore it.
+        if selected_action =="export" and not layer_is_selected:
+            return "ignore"
+        # Otherwise, save it as an image.
+        return "save"
         
-        elif what == "export" and layer_is_selected:
+    # if our layer is a group instead
+    else:
+        # if it's flatten-selected
+        if is_selected(layer,flatten):
+            # if we're flattening everything but the selected, pass
+            if flatten_action == "ignore":
+                return "pass"
+            # otherwise, flatten it and save it.
+            else:
+                return "save"
+        
+        # if it's NOT selected and flatten_action is 'ignore' (flattening the unselected), flatten it
+        elif flatten_action == "ignore":
+            return "save"
+
+        # if we're exporting the selected and it's selected, export its contents
+        elif selected_action == "export" and layer_is_selected:
             return "export"
         
+        # if nothing applies, pass
         return "pass"
-    
-    else:
-        if what =="export" and not layer_is_selected:
-            return "ignore"
-        return "save"
+        
 
 def is_selected(layer:Layer|None, selected:list)->bool:
     """Return if a layer is selected based off whatever is in the selected list (names, expressions and (layer,parent) tuples)"""
-    # abort if no layer given
+    # abort if no layer or list given
     if not layer or not selected:
         return False
     
@@ -254,26 +276,30 @@ def get_regex(expressions:list)->str:
     # join all the regexes separated by "|"" and put the result inside "()"
     return r"(" + "|".join(rex) + ")"
 
-def dummy_process(psd:PSDImage|Layer, selected:list=[], what:str|None=None, flatten:list=[]) -> list:
+def dummy_process(psd:PSDImage|Layer, selected:list=[], selected_action:str|None=None, flatten:list=[], flatten_action:str|None=None) -> list:
     """Temp function to test logic before applying it to process_psd"""
     filtered = []
     
     for layer in psd: #type:ignore
-        layer_action = what_do(layer,selected,flatten,what)
+        layer_action = what_do(layer,selected,flatten,selected_action, flatten_action)
         layer_append = (layer.name, layer.parent.name)
 
+        # save: saves image (appends it to the list of what would be saved)
         if layer_action == "save":
             filtered.append(layer_append)
         
+        # ignore: ignore it xD
         elif layer_action == "ignore":
             pass
 
         elif layer.is_group(): 
+            # pass: enters the group and processes the contents
             if layer_action == "pass":
-                filtered = filtered + dummy_process(layer,selected,what,flatten)
-    
+                filtered = filtered + dummy_process(layer,selected,selected_action,flatten, flatten_action)
+            
+            # export: saves *everything* inside the folder
             elif layer_action=="export":
-                filtered = filtered + dummy_process(layer,["*"],what,flatten)
+                filtered = filtered + dummy_process(layer,["*"],selected_action,flatten, flatten_action)
 
     return filtered
 
@@ -305,15 +331,14 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     alpha        = kwargs.get("alpha", None) # alpha mask image. Only exists if layer is inside a group that has a mask.
     trim_to_mask = kwargs.get("trim_to_mask", False) # if we're cropping layers to their mask's bbox.
     canvas_size  = kwargs.get("canvas_size",(bbox[2],bbox[3]))
-    
+
     # If we got a PSDImage, flatten it and return.
     if isinstance(layer,PSDImage):
 
         # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
-        bbox = layer.bbox if trim_layers else tuple([0,0] + list(layer.size)) # don't use canvas_size unless we're cropping!
+        bbox = get_psd_bbox(layer) if trim_layers else tuple([0,0] + list(layer.size)) # don't use canvas_size unless we're cropping!
 
         return layer.composite(force = True, viewport=bbox) #type: ignore
-        
     
     if not alpha:
         
@@ -321,9 +346,18 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
         if all([trim_to_mask, layer.has_mask() and not layer.mask.disabled]): #type: ignore
             bbox = layer.mask.bbox # type: ignore
         
-        # Return the composited layer.
-        return layer.composite(viewport=bbox)
+        # Composite the layer.
+        image = layer.composite(viewport=bbox)
         
+        # if we're trimming, crop it.
+        if not all([trim_to_mask, layer.has_mask() and not layer.mask.disabled]) and trim_layers: #type: ignore
+            bbox = image.getbbox()  # type:ignore
+            # return cropped image!   
+            return image.crop(bbox) # type:ignore
+        
+        else:
+            return image
+
     # composites with alpha
     image = composite_alpha(layer,alpha,canvas_size)
 
@@ -363,6 +397,24 @@ def composite_alpha(layer,alpha,canvas_size) -> Image.Image|None:
     return image
 
 # resize auxs for GUI and Save ----  
+def get_psd_bbox(psd)->tuple:
+        
+    clippings = []
+    bbox = psd.bbox
+
+    for layer in psd.descendants():
+        if layer.clipping:
+            clippings.append((layer.name,layer.parent.name,layer.visible)) #type:ignore
+            layer.visible = False
+    
+    bbox = psd.bbox
+
+    for layer in psd.descendants():#type:ignore
+        if layer.clipping:
+            visible = [t[2] for t in clippings if (t[0],t[1]) == (layer.name,layer.parent.name)][0]#type:ignore
+            layer.visible = visible
+    
+    return bbox
 
 def get_height_scale(og_size,new_height)->float:
     """returns height scale"""
@@ -560,6 +612,7 @@ def get_export_args(**kwargs) -> dict:
         "selected"          : [],
         "selected_action"   : None,
         "flatten"           : [],
+        "flatten_action"    : None,
         "keep_aspect_ratio" : True,
         "kind"              : "%",
         "height"            : 0,
@@ -577,7 +630,7 @@ def get_export_args(**kwargs) -> dict:
 
         # if we want to trim to the visible layers of the psd, get the psd's bbox
         if args["trim_to_visible"]:
-            args["bbox"] = kwargs["file"]["psd"].bbox #type: ignore
+            args["bbox"] = get_psd_bbox(kwargs["file"]["psd"]) #type: ignore
         
         # otherwise, bbox is document size.
         else:

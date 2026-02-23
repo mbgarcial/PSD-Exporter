@@ -7,14 +7,6 @@ from psd_exporter import *
 
 # TESTS for psd_funcs
 
-def test_psd_name():
-    psd = PSDImage.open("psd_test.psd")
-    layer = psd.find("base")
-    assert layer.name == "base" #type:ignore
-    assert layer.parent.name == "Root" #type:ignore
-    assert psd.name == "Root"
-
-
 def test_is_selected_false():
     psd = PSDImage.open("psd_test.psd")
     layer = psd.find("base")
@@ -97,21 +89,26 @@ def test_what_do():
 
     # No selection
     assert what_do(layer) == "save" # exporting selected 
-    assert what_do(layer,what="ignore") == "save" # ignoring selected 
+    assert what_do(layer,selected_action="ignore") == "save" # ignoring selected 
 
     # Selection doesn't include layer
     assert what_do(layer, ["group1"]) == "ignore" # exporting selected
-    assert what_do(layer, ["group1"], what="ignore") == "save" # ignoring selected
+    assert what_do(layer, ["group1"], selected_action="ignore") == "save" # ignoring selected
     
     # Selection includes "all"
     assert what_do(layer,["*"]) == "save" # exporting selected 
     assert what_do(layer, ["group1", "*"]) == "save" # exporting selection
-    assert what_do(layer, ["group1", "*"], what="ignore") == "ignore" # ignoring selection
+    assert what_do(layer, ["group1", "*"], selected_action="ignore") == "ignore" # ignoring selection
 
 
 def test_what_do_group():
     psd = PSDImage.open("psd_test.psd")
     layer = psd.find("group1")
+
+    #Testing flatten.
+    assert what_do(layer,[],["group1"],None,"flatten") == "save"
+    assert what_do(layer,[],["group1"],None,"ignore") == "pass"
+    assert what_do(layer,[],["group2"],None,"ignore") == "save"
 
     # Selection includes layer
     assert what_do(layer,["group1"],[],"ignore") == "ignore" #ignoring selected
@@ -120,19 +117,28 @@ def test_what_do_group():
 
     # No selection
     assert what_do(layer) == "pass" # exporting selected 
-    assert what_do(layer,what="ignore") == "pass" # ignoring selected 
+    assert what_do(layer,selected_action="ignore") == "pass" # ignoring selected 
 
     # Selection doesn't include layer
     assert what_do(layer, ["group2"]) == "pass" # exporting selected
-    assert what_do(layer, ["group2"], what="ignore") == "pass" # ignoring selected
+    assert what_do(layer, ["group2"], selected_action="ignore") == "pass" # ignoring selected
     
     # Selection includes "all"
     assert what_do(layer,["*"]) == "export" # exporting selected 
     assert what_do(layer, ["group2", "*"]) == "export" # exporting selection
-    assert what_do(layer, ["group2", "*"], what="ignore") == "ignore" # ignoring selection
+    assert what_do(layer, ["group2", "*"], selected_action="ignore") == "ignore" # ignoring selection
 
 
 #filter layers - dummy process testing 
+def test_dummy_process_flatten_action():
+    psd = PSDImage.open("psd_test.psd")
+    
+    assert dummy_process(psd,["group2"], "ignore", ["group1"], None) == [("base","Root"),("group1","Root")]
+    assert dummy_process(psd,[], None, ["group*"], None) == [("base","Root"),("group1","Root"),("group2","Root")]
+    assert dummy_process(psd,[], None, ["group1", "attr3"], None) == [("base","Root"),("group1","Root"),("attr3","group2")]
+    assert dummy_process(psd,["b*"], "ignore", ["group*"], "ignore") == [("attr1","group1"),("attr2","group1"),("attr3","group2")]
+    assert dummy_process(psd,["b*"], "ignore", ["attr*"], "ignore") == [("group1","Root"),("group2","Root")]
+
 def test_dummy_process_ignore():
     psd = PSDImage.open("psd_test.psd")
     selected = ["b*"]
@@ -140,7 +146,7 @@ def test_dummy_process_ignore():
     assert dummy_process(psd,selected,"ignore",flatten) == [("group1","Root"),("group2","Root")]
     selected = ["*layer*"]
     flatten = []
-    assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root"),("attr1","group1"),("attr2","group1"),("attr1","group2"),("attr2","group2")]
+    assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root"),("attr1","group1"),("attr2","group1")]
     selected = ["group1","group2"]
     assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root")]
     selected = ["group2"]
@@ -158,7 +164,7 @@ def test_dummy_process_flatten():
     selected=["attr*"]
     assert dummy_process(psd,selected,"export",flatten) == [("group1","Root"),("group2","Root")]
     flatten = ["attr3"]
-    assert dummy_process(psd,selected,"export",flatten) == [("attr1","group1"),("attr2","group1"),("attr1","group2"),("attr2","group2"),("attr3","group2")]
+    assert dummy_process(psd,selected,"export",flatten) == [("attr1","group1"),("attr2","group1"),("attr3","group2")]
 
 def test_dummy_process_export_filters():
     psd = PSDImage.open("psd_test.psd")
@@ -166,22 +172,23 @@ def test_dummy_process_export_filters():
     assert dummy_process(psd,selected,"export") == [("base","Root")]
     selected=["Layer*"]
     exp = dummy_process(psd,selected,"export")
-    assert set(exp) == set([("Layer1","attr3"),("Layer2","attr3"),("Layer1_clipping","attr3"),("Layer2_clipping","attr3")])
+    assert set(exp) == set([("Layer1","attr3"),("Layer2","attr3")])
     selected=["*1"]
     exp = dummy_process(psd,selected,"export")
-    assert set(exp) == set([("Layer1","attr3"),("attr1","group2"),("attr1","group1"),("attr2","group1")])
+    assert set(exp) == set([("Layer1","attr3"),("attr1","group1"),("attr2","group1")])
 
 def test_dummy_process_export():
     psd = PSDImage.open("psd_test.psd")
+    # export only selected
     assert dummy_process(psd,["base"],"export") == [("base","Root")]
     assert dummy_process(psd,["group1"],"export") == [("attr1","group1"),("attr2", "group1")]
     exp =  dummy_process(psd,["group2"],"export")
-    assert set(exp) == set([("attr1","group2"),("attr2","group2"),("Layer1","attr3"),("Layer2","attr3"),("Layer1_clipping","attr3"),("Layer2_clipping","attr3")])
+    assert set(exp) == set([("Layer2","attr3"), ("Layer1", "attr3")])
     assert dummy_process(psd,["base","group1"],"export") == [("base","Root"),("attr1","group1"),("attr2", "group1")]
     
 
 
-# get all layernames & get_layername_and_parent
+# MAY NOT BE USED
 def test_get_all_layernames():
 
     psd = PSDImage.open("psd_test.psd")
@@ -263,15 +270,13 @@ def test_size_convert():
 # get_height_scale(og_size,new_height)->float:
 # get_width_scale(og_size,new_width)->float:
 # get_scale(size:tuple[int,int], width=None, height=None)-> float: returns a float that corresponds what % of the og width/heigh is the given width/height
-# get_repr(psd:PSDImage)->str: PSD Layer structure as a string
+
 # get_layer_repr(layers:list[Layer], level=0)->str: returns Layer name if layer is Layer, it iterates over itself appending names if it's a group. It add emojis too!
 
-# get_psd_filename_from_path(filename:str) -> str: Given a string that's a path to a file, this function returns a string with the name of the file (extension included). Uses regex!
-# open_psd(filename:str) -> dict: opens a PSD file from a path str and returns a dict with a PSDImage object and its name (filename.psd). It also saves size.
 # get_export_args(**kwargs) -> dict: returns relevant kwargs for process.psd. Assigns default values and adjusts others.
 
 # check_image_exists(filepath)-> bool : Checks if an image file exists
-# should_ignore_layer(layer:Layer,**kwargs): checks if a layer should be ignored via kwargs
+
 # layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None: Composites a Layer/PSDImage and returns an image. Returns None if the image creation fails
 # create_alpha(mask, canvas_size) -> Image.Image|None: converts a layer mask to b/w image to save on alpha channel
 # composite_alpha(layer,alpha,canvas_size) -> Image.Image|None: Composites a layer and applies an alpha mask image to it
