@@ -93,7 +93,7 @@ class App:
        
         # binding the entry fields
         self.resize_focus = tk.StringVar(value="", name="resize_focus")
-        self.width_input_entry.bind("<FocusIn>",self.resize_set_focus) #lambda evt, i=i, j=j: self.method_calling(i, j)
+        self.width_input_entry.bind("<FocusIn>",self.resize_set_focus) 
         self.height_input_entry.bind("<FocusIn>",self.resize_set_focus)
 
         # registering the variable observers
@@ -280,7 +280,10 @@ class App:
         
         # if we're in %, make sure height and width are the same
         if kind == "%":
-            set_height(width)
+            if var == "width_input" and focus == "w_entry":
+                set_height(width)
+            elif var == "height_input" and focus == "h_entry":
+                set_width(height)
             
         # if we're in pixels
         else:

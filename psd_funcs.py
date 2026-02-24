@@ -336,7 +336,7 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     if isinstance(layer,PSDImage):
 
         # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
-        bbox = get_psd_bbox(layer) if trim_layers else tuple([0,0] + list(layer.size)) # don't use canvas_size unless we're cropping!
+        bbox = layer.bbox if trim_layers else tuple([0,0] + list(layer.size)) # don't use canvas_size unless we're cropping!
 
         return layer.composite(force = True, viewport=bbox) #type: ignore
     
@@ -347,16 +347,8 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
             bbox = layer.mask.bbox # type: ignore
         
         # Composite the layer.
-        image = layer.composite(viewport=bbox)
+        return layer.composite(viewport=bbox)
         
-        # if we're trimming, crop it.
-        if not all([trim_to_mask, layer.has_mask() and not layer.mask.disabled]) and trim_layers: #type: ignore
-            bbox = image.getbbox()  # type:ignore
-            # return cropped image!   
-            return image.crop(bbox) # type:ignore
-        
-        else:
-            return image
 
     # composites with alpha
     image = composite_alpha(layer,alpha,canvas_size)
@@ -397,24 +389,6 @@ def composite_alpha(layer,alpha,canvas_size) -> Image.Image|None:
     return image
 
 # resize auxs for GUI and Save ----  
-def get_psd_bbox(psd)->tuple:
-        
-    clippings = []
-    bbox = psd.bbox
-
-    for layer in psd.descendants():
-        if layer.clipping:
-            clippings.append((layer.name,layer.parent.name,layer.visible)) #type:ignore
-            layer.visible = False
-    
-    bbox = psd.bbox
-
-    for layer in psd.descendants():#type:ignore
-        if layer.clipping:
-            visible = [t[2] for t in clippings if (t[0],t[1]) == (layer.name,layer.parent.name)][0]#type:ignore
-            layer.visible = visible
-    
-    return bbox
 
 def get_height_scale(og_size,new_height)->float:
     """returns height scale"""
