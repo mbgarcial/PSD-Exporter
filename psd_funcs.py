@@ -80,6 +80,8 @@ class ExportableImg():
                 
                 image = image.resize(new_size, Image.Resampling.LANCZOS) #type: ignore
 
+            # Create the container folder if it doesn't exist
+            Path(self.path).mkdir(parents=True, exist_ok=True) 
             # finally, save it
             image.save(self.get_savepath())
 
@@ -101,6 +103,10 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
     selected_action = kwargs.get("selected_action",None)
     flatten_action  = kwargs.get("flatten_action",None)
     ignore_invisible= kwargs.get("ignore_invisible",True)
+
+    # if we're dealing with the psd, create the main folder first
+    if isinstance(psd,PSDImage):
+        Path(path).mkdir(parents=True, exist_ok=True)
 
     # if we're flattening, flatten the psd
     if kwargs.get("flat", False) or "*" in flatten: 
@@ -131,9 +137,8 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
             # make new kwargs to not contaminate the og
             group_kwargs = dict(kwargs)
 
-            # create a new folder
+            # save the group as a new path to pass down
             new_path     = path+"/"+group_name
-            Path(new_path).mkdir(parents=True, exist_ok=True)
 
             # Check if this group has a mask enabled
             mask = layer.mask if layer.has_mask() and not layer.mask.disabled else None #type:ignore
@@ -604,7 +609,7 @@ def get_export_args(**kwargs) -> dict:
 
         # if we want to trim to the visible layers of the psd, get the psd's bbox
         if args["trim_to_visible"]:
-            args["bbox"] = get_psd_bbox(kwargs["file"]["psd"]) #type: ignore
+            args["bbox"] = kwargs["file"]["psd"].bbox #type: ignore
         
         # otherwise, bbox is document size.
         else:

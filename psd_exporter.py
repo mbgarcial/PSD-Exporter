@@ -500,9 +500,6 @@ class App:
         # Make a path for the new folder where we'll be saving things - default behavior
         path = path+"/"+name
 
-        # Create the main folder
-        Path(path).mkdir(parents=True, exist_ok=True)
-
         # Get the args we'll pass to the function
         self.retrieve_input_kwargs()
         export_args = get_export_args(**self.kwargs)

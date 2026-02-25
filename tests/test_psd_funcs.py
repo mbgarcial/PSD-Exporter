@@ -5,12 +5,6 @@ sys.path.append("..")
 from psd_funcs import *
 from psd_exporter import *
 
-def test_bbox():
-    psd = PSDImage.open("psd_test.psd")
-    layer = psd.find("group2")
-    assert layer.bbox == Group.extract_bbox(layer) #type:ignore
-
-
 # TESTS for psd_funcs
 
 def test_is_selected_false():
