@@ -10,14 +10,60 @@ import re
 
 class ExportableImg():
     """
-    Docstring for ExportableImg
+    Class that contains a PSDImage, Layer or Group to be exported as an image file.
+
+    Attributes
+    ----------
+    image : Layer | PSDImage
+        the source of the image that will be saved.
+    name : str
+        name that will be used to save the file
+    path : str
+        path where ther image will be saved
+    ext  : str
+        extension the image file will be saved in. defauls is '.png'
+    visible : bool
+        the image's visibility attribute 
+    exportargs : list
+        a list of attributes that will be taken into consideration when saving the image
+
+
+    Methods
+    -------
+    get_bbox():
+        returns the object's bbox (bounding box : (left, top, right, bottom) coordinates).
+
+    get_savepath():
+        returns the filepath to save the image.
+
+    get_args():
+        returns a dictionary with relevant kwargs for exporting that were passed to the object at the moment of creation.
+
+    save():
+        Saves the image to disk.
     
-    :var export_args: Description
-    :vartype export_args: Any
-    :var image: Description
-    :vartype image: Any
     """
-    def __init__(self, image: Layer | PSDImage, name: str, path: str, **kwargs):
+
+    def __init__(self, image: Layer | PSDImage, name: str, path: str, **kwargs) -> None:
+        """
+        Constructs the attributes for the ExportableImage object.
+
+        Parameters
+        ----------
+            image : Layer | PSDImage
+                the source of the image to be saved
+            name : str
+                the name to use when saving the image
+            path : str
+                path where ther image will be saved
+            **kwargs: Any
+                other named parameters that will be saved as attributes
+
+        Raises
+        ------
+            ValueError: No Layer provided
+        """
+
         self.image   = image
         if not image:
             raise ValueError("No Layer provided")
@@ -30,23 +76,50 @@ class ExportableImg():
             setattr(self,arg,kwargs[arg])
             self.exportargs.append(arg)
 
-    def get_bbox(self) -> tuple:
-        """returns the object's saved bbox or, if it doesn't exist, the layer's bbox"""
+    def get_bbox(self) -> tuple[int,int,int,int]:
+        """
+        Returns the object's bbox (bounding box : (left, top, right, bottom) coordinates).
+
+        Returns
+        -------
+        tuple[int,int,int,int]
+        """
         bbox = getattr(self,"bbox", None)
         return bbox if bbox else self.image.bbox
     
     def get_savepath(self) -> str:
-        """returns a filepath to save the image"""
+        """
+        Returns the filepath to save the image.
+
+        Returns
+        -------
+        str
+        """
         return self.path+"/"+self.name+self.ext
     
     def get_args(self)-> dict:
-        """returns a dictionary with relevant kwargs for exporting that were passed to the object at the moment of creation."""
+        """
+        Returns a dictionary with relevant kwargs for exporting that were passed to the object at the moment of creation.
+
+        Returns
+        -------
+        dict
+        """
+        # create the dict from self.exportargs list
         args = {k:getattr(self,k) for k in self.exportargs}
+        # make sure to have the correct bbox
         args["bbox"] = self.get_bbox()
+
         return args
 
     def save(self) -> bool|str:
-        """Saves the image to the recorded path with the recorded extension"""
+        """
+        Saves the image to disk.
+        
+        Returns
+        -------
+        bool | str (upon failure)
+        """
         
         # get exporting args
         export_args = self.get_args()
@@ -97,11 +170,22 @@ class ExportableImg():
         if check_image_exists(self.get_savepath()):
             return True
 
-        # if the image failed, return failure.
+        # if the image failed, return a failure message.
         return f"Failed to export {self.name}"
 
 def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
-    """Processes a PSD (and layer groups recursively), by going through all the layers/groups and exporting them"""
+    """
+    Processes a PSD (and layer groups recursively), by going through all the layers/groups and exporting them based on parameters given.
+        
+        Parameters:
+            psd (PSDImage|Group): A PSDImage or a Group from a PSD file that contains layers.
+            name (str): name of the file or group.
+            path (str): path where the image(s) should be saved 
+            **kwargs: other named parameters
+
+        Returns:
+            result (bool | str): either True if the process goes without issues, or a string with a failure message.
+    """
 
     selected        = kwargs.get("selected", [])
     flatten         = kwargs.get("flatten", [])
@@ -164,7 +248,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 #---------
 
 def process_mask(mask,group_kwargs:dict)->dict:
-    """Helper of process_psd to process the mask of a group and save it in a dict to pass it down to its descendants"""
+    """Helper of process_psd() to process the mask of a group and save it in a dict, to pass it down to its descendants."""
     
     if not mask:
         return group_kwargs
@@ -256,7 +340,7 @@ def is_selected(layer:Layer|None, selected:list)->bool:
     return False
     
 def get_regex(expressions:list)->str:
-    """converts a list of wildcard expressions into a regex string"""
+    """converts a list of wildcard expressions into a usable regex string"""
     rex=[]
     for i in expressions:
         
@@ -366,7 +450,7 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     return image.crop(bbox) # type:ignore
 
 def create_alpha(mask, canvas_size) -> Image.Image|None:
-    """converts a layer mask to b/w image to save on alpha channel"""
+    """Converts a layer mask to b/w image of the canvas size provided"""
 
     if not mask:
         return None
@@ -379,7 +463,7 @@ def create_alpha(mask, canvas_size) -> Image.Image|None:
     return new_mask
 
 def composite_alpha(layer:Layer|Group|None, alpha:Image.Image|None, canvas_size:tuple) -> Image.Image|None: 
-    """Composites layer and applies an alpha mask image to it"""
+    """Composites a layer and applies a b/w image to its alpha channel"""
 
     if any([not layer, not alpha]):
         return None
@@ -410,7 +494,7 @@ def get_width_scale(og_size,new_width)->float:
     return get_scale(og_size,width=new_width)
      
 def get_scale(size:tuple[int,int], width=None, height=None)-> float:
-    """returns a float that corresponds what % of the og width/heigh is the given width/height"""
+    """returns a float that corresponds to what % of the og width/heigh is the given width/height"""
     ogw, ogh = size
     if width:
         return width/ogw
@@ -434,46 +518,45 @@ def size_convert(size:tuple[int,int],input:tuple[int,int],kind:str="%") -> tuple
 
     return (nw,nh)
 
-def get_resize(size:tuple[int,int], kind:str="%", **kwargs) -> int:
-    """Returns correct size. Needs h or w, otherwise raises an error."""
+def get_resize(size:tuple[int,int], kind:str="%", width=None, height=None, convert=False) -> int:
+    """Returns correct size. 
+    Converts from pixels to % and viceversa, OR returns the proportional value of one dimension if given the other.
+    Needs height or width, otherwise raises an error."""
     ogw, ogh = size
     ratio    = ogw/ogh
-    w,h      = kwargs.get("width", None),kwargs.get("height", None)
-    convert  = kwargs.get("convert",False)
 
-    if w == None and h == None:
+    if width == None and height == None:
         raise ValueError("No value provided for neither W nor H")
-    # What are we trying to do?
-
+    
     # We're converting from % to px and viceversa
     if convert:
         # if we're given %, we need to convert to px
         if kind == "%":
-            if w:
-                return round(ogw*w/100)
-            elif h:
-                return round(ogh*h/100)
+            if width:
+                return round(ogw*width/100)
+            elif height:
+                return round(ogh*height/100)
 
         # if we're given px, convert to %
         else:
-            if w:
-                return w/ogw*100
-            elif h:
-                return h/ogh*100
+            if width:
+                return width/ogw*100
+            elif height:
+                return height/ogh*100
         
     # if we're not converting, we want the value not provided. Only needed for keepratio.
     else:
         # %h = %w, so return the same value given.
         if kind == "%":
-            return w if w else h #type:ignore
+            return width if width else height #type:ignore
         # here we need to calculate the value not given by using the ratio
         else:
             # if given width, return height
-            if w:
-                return round(w/ratio)
+            if width:
+                return round(width/ratio)
             # if given height, return width
-            elif h:
-                return round(ratio*h)
+            elif height:
+                return round(ratio*height)
 
     # if we're not converting and not keeping ratio, error.
     return -1
@@ -495,7 +578,7 @@ def get_psd_thumbnail(psd):
     return thumb
 
 def get_psd_dir(filename):
-    """matches a string and returns a match"""
+    """matches a path+filename string and returns the match"""
     match = re.match(r"(.*/).*\.psd",filename)
     if match:
         return match.group(1)
@@ -503,12 +586,13 @@ def get_psd_dir(filename):
 
 def separate_filters(str, sep=",") -> list:
     """separates a big str into a list"""
-    #first, separate everything by commas
+    # first, separate everything by commas
     l = str.split(sep)
+    # return a list of the separated items
     return [i.strip() for i in l if i not in [""," "]]
 
 #----------------------------------
-# Tree
+# Tree Representation
 
 def get_repr(psd:PSDImage)->str:
     """PSD Layer structure as a string"""
@@ -522,7 +606,7 @@ def get_repr(psd:PSDImage)->str:
     return text
 
 def get_layer_repr(layers:list[Layer], level=0)->str:
-    """returns Layer name if layer is Layer, it iterates over itself appending names if it's a group."""
+    """Returns Layer name if layer is Layer. It iterates over itself appending names if it's a group."""
     
     text = ""
     layer_kinds ={"group": "📂", "pixel": "🎨", "type": "✒️", "shape": "🔷"}
@@ -555,13 +639,13 @@ def get_layer_repr(layers:list[Layer], level=0)->str:
 def open_psd(filename:str) -> dict:
     """
     This function opens a PSD file from a path str and returns a dict with a PSDImage object and its name (filename.psd).
-    If it fails, it returns an empty dict, signaling its failure.
+    If it fails, it returns an empty dict.
 
-    Parameters:
-        filename (str) : A path str to open a PSD file.
-    
-    Returns:
-        dict: a dictionary containing the PSD file itself and the name of the file.
+        Parameters:
+            filename (str) : A path str to open a PSD file.
+        
+        Returns:
+            dict: a dictionary containing the PSD file itself and the name of the file.
     """
     psd_dict = dict()
     try:
@@ -583,7 +667,7 @@ def get_psd_filename_from_path(filename:str) -> str:
     return ""
 
 def app_kwargs_init(opened_psd) -> dict:
-    """Inits the dict for the app, given an opened psd"""
+    """Initializes the dictionary of named attributes for the tkinter app, given an opened psd file"""
     kwargs = dict()
     kwargs["file"] = opened_psd
     kwargs["width"], kwargs["height"] = opened_psd["psd_size"]
@@ -592,7 +676,7 @@ def app_kwargs_init(opened_psd) -> dict:
     return kwargs
 
 def get_export_args(**kwargs) -> dict:
-    """Given a dict, it initializes all kwargs for process.psd"""
+    """Given a dictionary, it initializes all the named arguments for use with process_psd()"""
     
     # default arg values
     default = {
