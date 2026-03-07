@@ -17,59 +17,62 @@ class ExportableImg():
     :var image: Description
     :vartype image: Any
     """
-    def __init__(self, image: Layer | PSDImage, name: str, path: str, ext= ".png", **kwargs):
+    def __init__(self, image: Layer | PSDImage, name: str, path: str, **kwargs):
         self.image   = image
+        if not image:
+            raise ValueError("No Layer provided")
         self.name    = name
         self.path    = path
-        self.ext     = ext
+        self.ext     = kwargs.get("extension",".png")
         self.visible = image.visible
         self.exportargs  = []
         for arg in kwargs:
             setattr(self,arg,kwargs[arg])
             self.exportargs.append(arg)
 
-    def get_bbox(self):
-        """gets bbox if not specified"""
+    def get_bbox(self) -> tuple:
+        """returns the object's saved bbox or, if it doesn't exist, the layer's bbox"""
         bbox = getattr(self,"bbox", None)
         return bbox if bbox else self.image.bbox
     
-    def get_savepath(self):
-        """returns filepath"""
+    def get_savepath(self) -> str:
+        """returns a filepath to save the image"""
         return self.path+"/"+self.name+self.ext
     
     def get_args(self)-> dict:
-        """returns a dictionary with relevant export kwargs"""
+        """returns a dictionary with relevant kwargs for exporting that were passed to the object at the moment of creation."""
         args = {k:getattr(self,k) for k in self.exportargs}
         args["bbox"] = self.get_bbox()
         return args
 
     def save(self) -> bool|str:
-        """Saves the image to the path with the extension given, if it's not ignored"""
+        """Saves the image to the recorded path with the recorded extension"""
         
-        # get export args
+        # get exporting args
         export_args = self.get_args()
 
-        # if this is a layer, make sure the layer is visible.
+        # if this is a layer, make sure the layer is visible. Do nothing if it's the psd file itself.
         if not isinstance(self.image, PSDImage):
             self.image.visible = True #type:ignore
         
-        # convert to a pil image, using the export args
+        # convert the layer to a pil image, using the export args
         image = layer_to_img(self.image, **export_args)
 
         # if the image succeeded in being created, process and save
         if image:
 
-            # Scale it if we're doing that
+            # Resize it if we're doing that
             if export_args["scale"] != 1.0:
                 
+                # abort if scale is too big
                 if export_args["scale"] > 5.0:
                     raise ValueError("Sorry, scale is way too big! (how did we get here???)")
                     
-                #if we're keeping aspect ratio:
+                # if we're keeping aspect ratio, get new size from the "scale" argument. 
                 if export_args["keep_aspect_ratio"]:
                     new_size = tuple(int(i*export_args["scale"]) for i in image.size)
                 
-                #if not..
+                # Otherwise, caculate new size based off the "width" and "height" arguments.
                 else:
                     og_size = export_args["canvas_size"]
                     w_scale = get_width_scale(og_size,int(export_args["width"]))
@@ -77,11 +80,12 @@ class ExportableImg():
                     
                     new_size = tuple([int(round(w_scale*image.size[0])),int(round(h_scale*image.size[1]))])
                 
-                
+                # Resize the image to its new size
                 image = image.resize(new_size, Image.Resampling.LANCZOS) #type: ignore
 
             # Create the container folder if it doesn't exist
             Path(self.path).mkdir(parents=True, exist_ok=True) 
+            
             # finally, save it
             image.save(self.get_savepath())
 
@@ -89,10 +93,11 @@ class ExportableImg():
         if not isinstance(self.image, PSDImage) and not self.visible:
             self.image.visible = self.visible # type:ignore
 
-        # check if the saved image exists, return True
+        # At last, check if the saving of the image was successful.
         if check_image_exists(self.get_savepath()):
             return True
-    
+
+        # if the image failed, return failure.
         return f"Failed to export {self.name}"
 
 def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
@@ -143,7 +148,7 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
             # Check if this group has a mask enabled
             mask = layer.mask if layer.has_mask() and not layer.mask.disabled else None #type:ignore
 
-            # if we have a mask, save it to apply it to its children
+            # if we have a mask, save it in the group kwargs to apply it to its children
             if mask:
                 group_kwargs = process_mask(mask,group_kwargs)
 
@@ -160,6 +165,9 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 
 def process_mask(mask,group_kwargs:dict)->dict:
     """Helper of process_psd to process the mask of a group and save it in a dict to pass it down to its descendants"""
+    
+    if not mask:
+        return group_kwargs
     
     # if we're trimming to mask, assign the mask bbox to the group's export bbox. 
     # This overrides canvas size and layer trimming.
@@ -227,7 +235,6 @@ def what_do(layer:Layer|None, selected:list=[], flatten:list=[], selected_action
         # if nothing applies, pass
         return "pass"
         
-
 def is_selected(layer:Layer|None, selected:list)->bool:
     """Return if a layer is selected based off whatever is in the selected list (names, expressions and (layer,parent) tuples)"""
     # abort if no layer or list given
@@ -308,13 +315,6 @@ def dummy_process(psd:PSDImage|Layer, selected:list=[], selected_action:str|None
 
     return filtered
 
-def get_all_layernames(psd:PSDImage)->list:
-    """returns a list of *all* of the layer names in a file with their parents"""
-    layers = []
-    for layer in psd.descendants():
-        layers.append((layer.name,layer.parent.name)) #type: ignore
-    return layers
-
 #----------------------------------------------------------------
 # PSD Processing - aux
 
@@ -368,6 +368,9 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
 def create_alpha(mask, canvas_size) -> Image.Image|None:
     """converts a layer mask to b/w image to save on alpha channel"""
 
+    if not mask:
+        return None
+    
     og_mask  = mask.topil().convert("L") #type: ignore
     new_mask = Image.new("RGB", canvas_size , color=(0,0,0)).convert("L")
 
@@ -375,22 +378,25 @@ def create_alpha(mask, canvas_size) -> Image.Image|None:
 
     return new_mask
 
-def composite_alpha(layer,alpha,canvas_size) -> Image.Image|None: 
+def composite_alpha(layer:Layer|Group|None, alpha:Image.Image|None, canvas_size:tuple) -> Image.Image|None: 
     """Composites layer and applies an alpha mask image to it"""
 
-    # Alpha processing: 
-    viewport    = tuple([0,0] + list(canvas_size))
-    image       = layer.composite(force = True, viewport = viewport) #type: ignore
+    if any([not layer, not alpha]):
+        return None
+    
+    # Composite layer to the canvas size: 
+    image = layer.composite(force = True, viewport = tuple([0,0] + list(canvas_size))) #type: ignore
 
     # split image into channels to get the layer's mask/alpha channel
     *_, og_alpha = image.split() #type:ignore
 
-    # combine layer's mask with our pre-saved alpha
-    new_alpha    = ImageChops.multiply(alpha, og_alpha)
+    # combine layer's mask/alpha with our pre-saved alpha
+    new_alpha    = ImageChops.multiply(alpha, og_alpha) #type:ignore
 
     # replace image's alpha with our new combined alpha
     image.putalpha(new_alpha) #type:ignore
 
+    # return the image
     return image
 
 # resize auxs for GUI and Save ----  
@@ -575,6 +581,15 @@ def get_psd_filename_from_path(filename:str) -> str:
     if match:
         return match.group(1)
     return ""
+
+def app_kwargs_init(opened_psd) -> dict:
+    """Inits the dict for the app, given an opened psd"""
+    kwargs = dict()
+    kwargs["file"] = opened_psd
+    kwargs["width"], kwargs["height"] = opened_psd["psd_size"]
+    kwargs["kind"] = "%"
+    kwargs["keep_aspect_ratio"] = True
+    return kwargs
 
 def get_export_args(**kwargs) -> dict:
     """Given a dict, it initializes all kwargs for process.psd"""

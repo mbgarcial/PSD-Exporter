@@ -406,11 +406,7 @@ class App:
             result = self.open_psd(filename)
         
     def kwargs_init(self,result):
-        self.kwargs = dict()
-        self.kwargs["file"] = result
-        self.kwargs["width"], self.kwargs["height"] = result["psd_size"]
-        self.kwargs["kind"] = "%"
-        self.kwargs["keep_aspect_ratio"] = True
+        self.kwargs = app_kwargs_init(result)
         
     def open_psd(self, filename):
         """Function to open a PSD file and read it"""
@@ -528,8 +524,9 @@ def main():
     app = App(root,f"{w}x{h}+400+300")
 
     # run the application
-    root.mainloop()
+    #root.mainloop()
+    return root #type:ignore
 
 if __name__ == "__main__":
-    main()
+    main().mainloop() #type:ignore
 
