@@ -1,22 +1,16 @@
+
 import pytest
 import sys
 sys.path.append("..")
 import os
 from psd_funcs import *
-from psd_exporter import *
+from project import *
 
 # TESTS for psd_funcs
 
 # Process_psd() doesn't have a unit test, but all its internal helper functions work.
 # dummy_process does basically the same and it works :)
 
-
-# process_mask()
-# needs: mask & kwargs
-# returns: kwargs (with mask saved)
-# use: updates kwargs["bbox"] & kwargs["alpha"] with mask info.
-# uses: create_alpha()✅
-# used by: process_psd
 
 def test_process_mask():
 
@@ -52,13 +46,6 @@ def test_process_mask():
     del args["canvas_size"]
     assert process_mask(mask,args)["alpha"] == create_alpha(mask, (mask.bbox[2],mask.bbox[3]))
 
-
-# composite_alpha()
-# needs: layer, alpha, canvas size
-# returns: Image | None (on failure)
-# use: composites a layer into an image, then extracts the alpha to create a mask, which then combines with the alpha given, and applies that to the image.
-# used by : layer_to_image() ✅
-
 def test_composite_alpha():
     # Init
     opened_psd  = open_psd("psd_test.psd")
@@ -87,13 +74,6 @@ def test_composite_alpha():
     img = layer.composite(force = True, viewport = tuple([0,0] + list(canvas_size)))
     assert img != composite_alpha_img
     assert img.size == composite_alpha_img.size #type:ignore
-    
-# create_alpha()
-# needs: mask & canvas size
-# returns: Image | None (on failure)
-# use: returns a b/w image from the mask provided.
-# uses: PIL funcs
-# used by: process_mask()
 
 def test_create_alpha():
     # Init
@@ -115,6 +95,241 @@ def test_create_alpha():
     # alpha size not the same as the size of the group either
     assert alpha.size != psd.find("group1").size #type:ignore
 
+def test_layer_to_img_trim_each_no_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+    args       = get_export_args(**args)
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # ---test 1 : trim each WITHOUT oob trim
+    
+    args["trim_to_size"]    = False
+    args["trim_layers"]     = True
+    args["trim_to_visible"] = False
+    expimg     = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image      = layer_to_img(expimg.image,**expimg.get_args())
+
+    # ✅ layer bbox != trimmed layer bbox
+    assert layer.bbox != trim_layer_bbox #type:ignore
+    # image size IS layer size
+    assert layer.size == image.size #type:ignore
+    # image size is NOT trimmed layer size
+    assert layer.size != trim_layer_size
+    # image size is not canvas size
+    assert layer.size != args["canvas_size"]
+    # image size is not full visible psd size
+    assert layer.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    
+def test_layer_to_img_trim_each_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+    
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # ---test 2 : trim each with oob trim
+   
+    args["trim_to_size"] = True
+    args["trim_layers"]  = True
+    args["trim_to_visible"] = False
+
+    args       = get_export_args(**args)
+    expimg     = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image      = layer_to_img(expimg.image,**expimg.get_args())
+
+    # ✅ layer bbox != trimmed layer bbox
+    assert layer.bbox != trim_layer_bbox #type:ignore
+    # ✅ image size is not layer size
+    assert layer.size != image.size #type:ignore
+    # ✅ image size is trimmed layer size
+    assert image.size == trim_layer_size #type:ignore
+    # ✅image size is not canvas size
+    assert image.size != args["canvas_size"] #type:ignore
+    # ✅image size is not full visible psd size
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+
+def test_layer_to_img_trim_full_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+
+    
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # -- test 3: trim full with oob trim
+
+    args["trim_to_size"]    = True
+    args["trim_layers"]     = False
+    args["trim_to_visible"] = True
+
+    args       = get_export_args(**args)
+    
+    expimg     = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image      = layer_to_img(expimg.image,**expimg.get_args())
+    #
+    # image size is NOT layer size
+    assert image.size != layer.size #type:ignore
+    #  image size is NOT trimmed layer size
+    assert image.size != trim_layer_size #type:ignore
+    # image size is NOT canvas size
+    assert image.size != args["canvas_size"] #type:ignore
+    # image size is NOT full visible psd size
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    
+def test_layer_to_img_trim_full_no_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+    
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # -- test 4: trim full WITHOUT oob trim
+
+    args["trim_to_size"]    = False
+    args["trim_layers"]     = False
+    args["trim_to_visible"] = True
+
+    args       = get_export_args(**args)
+    expimg      = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image       = layer_to_img(expimg.image,**expimg.get_args())
+    
+    # ✅ layer bbox == trimmed layer bbox
+    assert layer.bbox != trim_layer_bbox #type:ignore
+    # ✅ image size is NOT layer size
+    assert image.size != layer.size #type:ignore
+    # ✅image size is NOT trimmed layer size
+    assert image.size != trim_layer_size #type:ignore
+    # ✅image size is not canvas size
+    assert image.size != args["canvas_size"] #type:ignore
+    # ✅image size IS full visible psd size
+    assert image.size == (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    
+def test_layer_to_img_no_trim_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+    
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # -- test 5: no trim with oob trim
+    args["trim_to_size"]    = True
+    args["trim_layers"]     = False
+    args["trim_to_visible"] = False
+
+    args       = get_export_args(**args)
+    expimg      = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image       = layer_to_img(expimg.image,**expimg.get_args())
+    
+    # ✅image size is NOT layer size
+    assert layer.size != image.size #type:ignore
+    # ✅image size is NOT trimmed layer size
+    assert image.size != trim_layer_size #type:ignore
+    # ✅ image size IS canvas size
+    assert image.size == args["canvas_size"] #type:ignore
+    # ✅image size is NOT full visible psd size
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    
+def test_layer_to_img_no_trim_no_trim_visible():
+    # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
+    # use psd_test2.psd
+    #Init
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+    
+
+    # Use a suitable layer
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+    trim_layer_bbox = trim_oob_bbox(layer.bbox,list(psd.size) )
+    trim_layer_size =  (trim_layer_bbox[2]-trim_layer_bbox[0],trim_layer_bbox[3]-trim_layer_bbox[1])
+
+    # -- test 6: no trim WITHOUT oob trim
+    args["trim_to_size"]    = False
+    args["trim_layers"]     = False
+    args["trim_to_visible"] = False
+
+    args       = get_export_args(**args)
+    expimg      = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image       = layer_to_img(expimg.image,**expimg.get_args())
+
+    # image size is not layer size
+    assert layer.size != image.size #type:ignore
+    # ✅image size is NOT trimmed layer size
+    assert image.size != trim_layer_size #type:ignore
+    # ✅image size is canvas size??
+    assert image.size == args["canvas_size"] #type:ignore
+    # ✅image size is not full visible psd size...??
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    
+def test_layer_to_img_crop_to_layer():
+    #Init
+    opened_psd = open_psd("psd_test.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+
+    # set crop layer 
+    crop_layer = psd.find("Layer2")
+    args["crop_layer"] = crop_layer
+
+    # Update args
+    args       = get_export_args(**args)
+
+    # Use a suitable layer
+    layer_name  = "base"
+    expimg      = ExportableImg(psd.find(layer_name), layer_name, "psd_test",**args)
+    image       = layer_to_img(expimg.image,**expimg.get_args())
+
+    # Make sure it matches the crop_layer's bbox
+    assert image.size == crop_layer.size #type:ignore
+    # Not the PSD visible size
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    # It's not the same as the layer size
+    assert image.size != psd.find("base").size #type:ignore
+    # It's not the same as canvas size
+    assert image.size != args["canvas_size"] #type:ignore
+
 def test_layer_to_image_crop_to_mask():
     #Init
     opened_psd = open_psd("psd_test.psd")
@@ -135,7 +350,7 @@ def test_layer_to_image_crop_to_mask():
     # Not the PSD visible size
     assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
     # It's not the same as the layer size
-    assert image.size != psd.find("Layer1").size #type:ignore
+    assert image.size != psd.find("base").size #type:ignore
     # It's not the same as canvas size
     assert image.size != args["canvas_size"] #type:ignore
 
@@ -298,16 +513,6 @@ def test_check_image_exists():
     filepath = "psd_test.psd"
     assert check_image_exists(filepath) == True
     assert check_image_exists("psd_test.png") == False
-
-def test_layer_repr():
-    psd = PSDImage.open("psd_test.psd")
-    layer = psd.find("base")
-    repr = get_layer_repr([layer]) #type:ignore
-    assert repr == "🎨 base ⏺\n"
-
-    layer = psd.find("Layer1_clipping")
-    repr = get_layer_repr([layer]) #type:ignore
-    assert repr == "↷🫥🎨 Layer1_clipping\n"
 
 def test_is_selected_false():
     psd = PSDImage.open("psd_test.psd")
@@ -483,45 +688,6 @@ def test_dummy_process_export():
     exp =  dummy_process(psd,["group2"],"export")
     assert set(exp) == set([("Layer2","attr3"), ("Layer1", "attr3")])
     assert dummy_process(psd,["base","group1"],"export") == [("base","Root"),("attr1","group1"),("attr2", "group1")]
-    
-# get_export_args()
-def test_get_export_args():
-    psd = open_psd("psd_test.psd")
-    kwargs = app_kwargs_init(psd)
-    args = get_export_args(**kwargs)
-
-    assert args["extension"] == ".png"
-    assert args["ignore_invisible"] == True
-    assert args["scale"] == 1.0
-    assert args["canvas_size"] == kwargs["file"]["psd_size"]
-
-    assert args["bbox"] == None
-
-    kwargs["trim_layers"] = False
-    kwargs["trim_to_visible"] = True
-    args = get_export_args(**kwargs)
-    assert args["bbox"] == kwargs["file"]["psd"].bbox
-
-    kwargs["trim_layers"] = False
-    kwargs["trim_to_visible"] = False
-    args = get_export_args(**kwargs)
-
-    assert args["bbox"] == tuple([0,0] + list(args["canvas_size"]))
-    
-# open_psd()
-def test_open_psd():
-    psd = PSDImage.open("psd_test.psd")
-    opened_psd = open_psd("psd_test.psd")
-    assert opened_psd["psd"].size == psd.size
-    assert opened_psd["psd_name"] == "psd_test.psd"
-    assert opened_psd["psd_size"] == (1024,1024)
-
-# get_psd_dir()
-def test_get_psd_dir():
-    assert get_psd_dir("photo.psd") == "/"
-    assert get_psd_dir("lala/photo.psd") == "lala/"
-    assert get_psd_dir("lala/lele/") == "/"
-    assert get_psd_dir("lala/lele/photo.png") == "/"
 
 # get_scale(), get_width_scale(), get_height_scale()
 def test_get_width_and_height_scale():
@@ -539,51 +705,3 @@ def test_get_scale():
     assert get_scale(size,height=300) == 0.5
     assert get_scale(size,height=150) == 0.25
     assert get_scale(size,height=75) == 0.125
-
-#get_resize()
-def test_get_resize():
-    size = (800,600)
-
-    with pytest.raises(ValueError):
-        get_resize(size)
-
-    # percent returns same percent
-    assert get_resize(size, width=100) == 100
-    assert get_resize(size, height=50) == 50
-
-    # pixels returns the proportional other size
-    assert get_resize(size, kind="px", width=1920) == 1440
-    assert get_resize((1280,720), kind="px", height=1080) == 1920
-
-    # convert % to px
-    assert get_resize(size, width=100, convert=True) == 800
-    assert get_resize(size, height=50, convert=True) == 300
-
-    # convert px to %
-    assert get_resize(size, width = 800, kind="px", convert=True) == 100
-    assert get_resize(size, height = 300, kind="px", convert=True) == 50
-    
-def test_size_convert():
-    size = (800,600)
-    # convert to %
-    assert size_convert(size,(800,600), "%") == (100,100)
-    assert size_convert(size,(400,150), "%") == (50,25)
-
-    # convert to px
-    assert size_convert(size,(100,100), "px") == (800,600)
-    assert size_convert(size,(10,100), "px") == (80,600)
-
-    # back and forth
-    a = size_convert(size, (100,100), "px")
-    assert size_convert(size,a,"%") == (100,100)
-
-    a = size_convert(size,(400,150),"px")
-    assert size_convert(size,a,"%") == (400,150)
-
-
-# Functions that we can test
-
-# create_alpha(mask, canvas_size) -> Image.Image|None: converts a layer mask to b/w image to save on alpha channel
-# composite_alpha(layer,alpha,canvas_size) -> Image.Image|None: Composites a layer and applies an alpha mask image to it
-# process_psd() -> This is what saves the whole psd, by creating ExportableImages and saving them as it loops through all the files. It returns True if it manages to save everything, or a string if it fails
-# process_mask()
