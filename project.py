@@ -47,16 +47,18 @@ class App:
         self.right_frame.grid(row = 0, column = 1, pady = 5, padx = 5, sticky=tk.E)
         self.status_bar.grid(row = 1, column = 0, columnspan=2,sticky = tk.S)
 
+        # thumbnails (gets grid-ed when opening a file.)
+        self.thumbnail    = tk.Label(self.right_frame)
+        self.thumbnail.grid(row=0, column=3,padx=30, pady=5,sticky=tk.E)
+        #tk.Label(self.right_frame, text="Thumb").grid(row = 0, column = 0, pady=1, sticky=tk.W)
+
         # This is the PSD info text (currently number of layers and number of folders). It's initilized with ""
         self.psdinfo      = scrolledtext.ScrolledText(self.right_frame, width=45, wrap=tk.WORD, state="disabled", spacing1=1)   
-        self.psdinfo.grid(row=0, column=0)
+        self.psdinfo.grid(row=2, column=0, columnspan=5)
 
         # open file button, calls select_file
         self.open_button  = ttk.Button(self.left_frame, text='Open PSD', command=self.select_file)
         self.open_button.grid(row = 0, column = 0, columnspan = 2, pady = 2)
-        
-        # thumbnails (gets grid-ed when opening a file.)
-        self.thumbnail    = tk.Label(self.left_frame)
         
         # Export
         self.export_button = ttk.Button(self.left_frame, text='Export Layers',command=self.export_psd)
@@ -82,6 +84,18 @@ class App:
         self.crop_to_layer_check = ttk.Checkbutton(self.crop_frame, text = "Crop to layer:", variable=self.crop_to_layer, onvalue=True, offvalue=False, command=lambda:self.toggle_kwargs("crop_to_layer"))
         self.crop_layer = tk.StringVar(value="")
         self.crop_layer_entry = tk.Entry(self.crop_frame, name="crop_layer_entry", textvariable = self.crop_layer, validate="all", validatecommand=(vcmd2, '%P'), state= tk.DISABLED)
+
+        # crop input 
+        self.crop_to_bbox = tk.BooleanVar(value=False)
+        self.crop_to_bbox_check = ttk.Checkbutton(self.crop_frame, text = "Crop - ", variable=self.crop_to_bbox, onvalue=True, offvalue=False, command=lambda:self.toggle_kwargs("crop_to_bbox"))
+        self.top_input = tk.IntVar(value=0, name="top_input")
+        self.left_input = tk.IntVar(value=0, name="left_input")
+        self.bottom_input = tk.IntVar(value=100, name="bottom_input")
+        self.right_input = tk.IntVar(value=100, name="right_input")
+        self.top_input_entry = tk.Entry(self.crop_frame, name="top_entry", textvariable = str(self.top_input), width=5,validate="all", validatecommand=(vcmd, '%P'),state= tk.DISABLED) # type: ignore
+        self.left_input_entry = tk.Entry(self.crop_frame, name="left_entry", textvariable = str(self.left_input), width=5,validate="all", validatecommand=(vcmd, '%P'),state= tk.DISABLED) # type: ignore
+        self.bottom_input_entry = tk.Entry(self.crop_frame, name="bottom_entry", textvariable = str(self.bottom_input), width=5,validate="all", validatecommand=(vcmd, '%P'),state= tk.DISABLED) # type: ignore
+        self.right_input_entry = tk.Entry(self.crop_frame, name="right_entry", textvariable = str(self.right_input), width=5,validate="all", validatecommand=(vcmd, '%P'),state= tk.DISABLED) # type: ignore
 
         # trim 
         self.trim = tk.StringVar(value="all")
@@ -152,9 +166,19 @@ class App:
         
         # row 5: CROP
         self.crop_frame.grid(row = 5, column = 0, pady=2, sticky=tk.W)
-        self.trim_to_mask_check.grid(row = 1, column = 0, pady=1, sticky=tk.W, columnspan=3)
-        self.crop_to_layer_check.grid(row = 2, column = 0, pady=1, sticky=tk.W)
-        self.crop_layer_entry.grid(row = 2, column = 1, pady=1, sticky=tk.W)
+        self.trim_to_mask_check.grid(row = 1, column = 0, pady=1, sticky=tk.W, columnspan=8)
+        self.crop_to_layer_check.grid(row = 2, column = 0, pady=1, sticky=tk.W, columnspan=2)
+        self.crop_layer_entry.grid(row = 2, column = 2, pady=1, sticky=tk.W,columnspan=5)
+        self.crop_to_bbox_check.grid(row = 3, column = 0, pady=1, sticky=tk.W)
+        tk.Label(self.crop_frame, text="Top:").grid(row = 3, column = 1, pady=1, sticky=tk.W)
+        self.top_input_entry.grid(row = 3, column = 2, pady=1, sticky=tk.W)
+        tk.Label(self.crop_frame, text="Bottom:").grid(row = 3, column = 3, pady=1, sticky=tk.W)
+        self.bottom_input_entry.grid(row = 3, column = 4, pady=1, sticky=tk.W)
+        tk.Label(self.crop_frame, text="Left:").grid(row = 4, column = 1, pady=1, sticky=tk.W)
+        self.left_input_entry.grid(row = 4, column = 2, pady=1, sticky=tk.W)
+        tk.Label(self.crop_frame, text="Right:").grid(row = 4, column = 3, pady=1, sticky=tk.W)
+        self.right_input_entry.grid(row = 4, column = 4, pady=1, sticky=tk.W)
+        
         
         # row 6: TRIM
         self.trim_frame.grid(row = 6, column = 0, pady=2, sticky=tk.W)
@@ -189,7 +213,6 @@ class App:
         self.flatten_entry.grid(row = 4, column = 1, pady=1, sticky=tk.W)
         self.ignore_flatselected_radio.grid(row = 5, column = 0, pady=1, sticky=tk.W,columnspan=4)
         self.export_flatselected_radio.grid(row = 6, column = 0, pady=1, sticky=tk.W,columnspan=4)
-
 
     def show_thumb(self, thumb):
         """Shows the thumbnail"""
@@ -409,14 +432,44 @@ class App:
             if var:
                 self.trim_to_mask.set(False)
                 self.kwargs["trim_to_mask"] = False
+                self.crop_to_bbox.set(False)
+                self.kwargs["crop_to_bbox"] = False
                 self.crop_layer_entry.config(state=tk.NORMAL)
+                self.top_input_entry.config(state=tk.DISABLED)
+                self.left_input_entry.config(state=tk.DISABLED)
+                self.bottom_input_entry.config(state=tk.DISABLED)
+                self.right_input_entry.config(state=tk.DISABLED)
             else:
                 self.crop_layer_entry.config(state=tk.DISABLED)
+                
+
+        elif toggle == "crop_to_bbox":
+            if var:
+                self.trim_to_mask.set(False)
+                self.kwargs["trim_to_mask"] = False
+                self.crop_to_layer.set(False)
+                self.kwargs["crop_to_layer"] = False
+                self.crop_layer_entry.config(state=tk.DISABLED)
+                self.top_input_entry.config(state=tk.NORMAL)
+                self.left_input_entry.config(state=tk.NORMAL)
+                self.bottom_input_entry.config(state=tk.NORMAL)
+                self.right_input_entry.config(state=tk.NORMAL)
+            else:
+                self.top_input_entry.config(state=tk.DISABLED)
+                self.left_input_entry.config(state=tk.DISABLED)
+                self.bottom_input_entry.config(state=tk.DISABLED)
+                self.right_input_entry.config(state=tk.DISABLED)
 
         elif toggle == "trim_to_mask" and var:
             self.crop_to_layer.set(False)
             self.kwargs["crop_to_layer"] = False
+            self.crop_to_bbox.set(False)
+            self.kwargs["crop_to_bbox"] = False
             self.crop_layer_entry.config(state=tk.DISABLED)
+            self.top_input_entry.config(state=tk.DISABLED)
+            self.left_input_entry.config(state=tk.DISABLED)
+            self.bottom_input_entry.config(state=tk.DISABLED)
+            self.right_input_entry.config(state=tk.DISABLED)
 
         self.toggle_trim_state()
         self.kwargs[toggle] = var
@@ -424,7 +477,8 @@ class App:
     def toggle_trim_state(self):
         """disables or enables all trim radio buttons"""
         crop = getattr(self,"crop_to_layer").get()
-        if crop:
+        bboxcrop = getattr(self,"crop_to_bbox").get()
+        if any([crop,bboxcrop]):
             # disable all trims
             self.trim_layers_radio.config(state = tk.DISABLED )
             self.trim_to_visible_radio.config(state = tk.DISABLED )
@@ -481,13 +535,14 @@ class App:
     
     def get_bbox(self):
         """retrieves bbox input if crop is enabled, otherwise returs None"""
-        if not self.kwargs["crop"]:
+        if not self.kwargs["crop_to_bbox"]:
             return None
         
-        top     = 0#self.crop_top_entry.get()
-        left    = 0#self.crop_left_entry.get()
-        bottom  = 50#self.crop_bottom_entry.get()
-        right   = 50#self.crop_right_entry.get()
+        self.kwargs["crop"] = True
+        top     = int(self.top_input_entry.get())
+        left    = int(self.left_input_entry.get())
+        bottom  = int(self.bottom_input_entry.get())
+        right   = int(self.right_input_entry.get())
 
         return tuple([top,left,bottom,right])
 
@@ -681,6 +736,8 @@ def get_export_args(**kwargs) -> dict:
             args["bbox"] = tuple([0,0] + list(args["canvas_size"])) #type:ignore
 
         print("from get_export_args, bbox is",args["bbox"])  
+
+    print("from get_export_args: Not trimming and not cropping. bbox is",args["bbox"] )
     return args
 
 #---------------------------

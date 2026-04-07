@@ -95,6 +95,33 @@ def test_create_alpha():
     # alpha size not the same as the size of the group either
     assert alpha.size != psd.find("group1").size #type:ignore
 
+def test_layer_to_img_crop_bbox():
+    # test that when we have crop as true, it crops the image to the specified bbox
+    opened_psd = open_psd("psd_test2.psd")
+    psd        = opened_psd["psd"]
+    args       = app_kwargs_init(opened_psd)
+
+    layer_name  = "Layer 2"
+    layer       = psd.find(layer_name)
+
+    crop_bbox   = (0,0,250,600)
+
+    args["crop"]= True
+    args["bbox"]= crop_bbox
+    args        = get_export_args(**args)
+
+    expimg = ExportableImg(layer, layer_name, "psd_test2",**args)
+    image  = layer_to_img(expimg.image,**expimg.get_args())
+
+    # image size is crop box size
+    assert image.size == (crop_bbox[2]-crop_bbox[0],crop_bbox[3]-crop_bbox[1]) #type: ignore
+    # img size is not layer size
+    assert image.size != layer.size #type:ignore
+    # img size is not canvas size
+    assert image.size != args["canvas_size"] #type:ignore
+    # image size is not full visible psd size
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+
 def test_layer_to_img_trim_each_no_trim_visible():
     # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size
     # use psd_test2.psd
@@ -123,11 +150,12 @@ def test_layer_to_img_trim_each_no_trim_visible():
     # image size IS layer size
     assert layer.size == image.size #type:ignore
     # image size is NOT trimmed layer size
-    assert layer.size != trim_layer_size
+    assert image.size != trim_layer_size #type:ignore
     # image size is not canvas size
-    assert layer.size != args["canvas_size"]
+    assert image.size != args["canvas_size"] #type:ignore
+
     # image size is not full visible psd size
-    assert layer.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
+    assert image.size != (psd.bbox[2]-psd.bbox[0],psd.bbox[3]-psd.bbox[1]) #type:ignore
     
 def test_layer_to_img_trim_each_trim_visible():
     # test that when we do trim each layer, a layer that's bigger than canvas size gets trimmed to canvas size

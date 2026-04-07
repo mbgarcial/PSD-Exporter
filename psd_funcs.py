@@ -426,15 +426,14 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     alpha        = kwargs.get("alpha", None) # alpha mask image. Only exists if layer is inside a group that has a mask.
     trim_to_mask = kwargs.get("trim_to_mask", False) # if we're cropping layers to their mask's bbox.
     canvas_size  = kwargs.get("canvas_size",(bbox[2],bbox[3]))
-    crop_layer   = kwargs.get("crop_layer",None)
+    crop_layer   = kwargs.get("crop_layer",None) #do we have a crop layer?
+    crop         = kwargs.get("crop",False) #are we cropping with bbox?
 
-    crop = any([crop_layer]) # add cropping numbers later.
+    crop = any([crop_layer, crop]) # add cropping numbers later.
 
     # if we're cropping, set the bbox
     if crop:
         bbox = crop_layer.bbox if crop_layer else bbox
-        # TODO: Add crop numbers later
-
         print("current bbox, after applying crop:", bbox)
 
     # If we got a PSDImage, flatten it and return.
@@ -466,7 +465,7 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     if not trim_to_mask and trim_layers and not crop:
         bbox  = image.getbbox()  # type:ignore
 
-    print("current bbox, has alpha conditional:", bbox)
+    #print("current bbox, has alpha conditional:", bbox)
 
     # return cropped image!   
     return image.crop(bbox) # type:ignore
