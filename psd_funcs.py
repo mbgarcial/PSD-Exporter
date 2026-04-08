@@ -203,6 +203,11 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
 
     # otherwise, iterate over layers
     for layer in psd:
+
+        # if it's the crop layer (if any), skip it
+        if layer == kwargs.get("crop_layer"):
+            pass
+
         # get what we should do with this layer
         layer_action = what_do(layer,selected,flatten,selected_action, flatten_action, ignore_invisible=ignore_invisible)
 
@@ -416,34 +421,42 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     
     # Retrieve some pertinent arguments
     trim_layers  = kwargs.get("trim_layers", True) # Are we trimming pixels?
+    trim_to_size = kwargs.get("trim_to_size", True) # Are we cropping stuff outside of canvas?
     bbox         = kwargs.get("bbox", layer.bbox) # bounding box to crop the Layer. Default is the layer's own bbox 
     alpha        = kwargs.get("alpha", None) # alpha mask image. Only exists if layer is inside a group that has a mask.
     trim_to_mask = kwargs.get("trim_to_mask", False) # if we're cropping layers to their mask's bbox.
     canvas_size  = kwargs.get("canvas_size",(bbox[2],bbox[3]))
+    crop_layer   = kwargs.get("crop_layer",None) #do we have a crop layer?
+    crop         = kwargs.get("crop",False) #are we cropping with bbox?
+
+    crop = any([crop_layer, crop]) # add cropping numbers later.
+
+    # if we're cropping, set the bbox
+    if crop:
+        bbox = crop_layer.bbox if crop_layer else bbox
 
     # If we got a PSDImage, flatten it and return.
-    if isinstance(layer,PSDImage):
+    if isinstance(layer,PSDImage) or not alpha:
+
+        # If this layer has a mask and we're trimming to mask, make the mask's bbox the layer's bbox
+        if not isinstance(layer,PSDImage) and all([trim_to_mask, layer.has_mask() and not layer.mask.disabled, not crop]): #type: ignore
+            bbox = layer.mask.bbox # type: ignore
 
         # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
-        bbox = layer.bbox if trim_layers else tuple([0,0] + list(layer.size)) # don't use canvas_size unless we're cropping!
+        if crop:
+            bbox = bbox
+        elif trim_to_size:
+            bbox = trim_oob_bbox(bbox, canvas_size) if trim_layers else bbox
+        else:
+            bbox = layer.bbox if trim_layers else bbox
 
         return layer.composite(force = True, viewport=bbox) #type: ignore
-    
-    if not alpha:
-        
-        # If this layer has a mask and we're trimming to mask, make the mask's bbox the layer's bbox
-        if all([trim_to_mask, layer.has_mask() and not layer.mask.disabled]): #type: ignore
-            bbox = layer.mask.bbox # type: ignore
-        
-        # Composite the layer.
-        return layer.composite(viewport=bbox)
-        
 
     # composites with alpha
     image = composite_alpha(layer,alpha,canvas_size)
 
     # Trim the image if we're not trimming to mask and we don't have trimming disabled.
-    if not trim_to_mask and trim_layers:
+    if not trim_to_mask and trim_layers and not crop:
         bbox  = image.getbbox()  # type:ignore
 
     # return cropped image!   
@@ -502,217 +515,25 @@ def get_scale(size:tuple[int,int], width=None, height=None)-> float:
         return height/ogh
     return 1.0
 
-def size_convert(size:tuple[int,int],input:tuple[int,int],kind:str="%") -> tuple[int,int]:
-    """Convert from % to px or viceversa"""
-    w, h     = input
+# -----
+# Layer bbox vs canvas bbox
+def trim_oob_bbox(layer_bbox,canvas_size) -> tuple[int, int, int, int]:
+    """returns a corrected bbox if the layer's bbox is out of bounds of the canvas size"""
+    canvas_bbox = (0,0,canvas_size[0],canvas_size[1])
+    layer_bbox  = layer_bbox if not isinstance(layer_bbox,(Layer, PSDImage)) else layer_bbox.bbox
 
-    # Converting to pixels, meaning I must have been given px
-    if kind == "px":
-        nw = get_resize(size, width = w, convert = True)
-        nh = get_resize(size, height= h, convert = True)
-
-    # converting to %, so i assume I was given px
+    # if they're the same, return the layer's bbox
+    if canvas_bbox == layer_bbox:
+        return layer_bbox
+    
+    # otherwise, adjust coords one by one
     else:
-        nw = get_resize(size, width=w, kind="px", convert=True)
-        nh = get_resize(size, height=h, kind="px", convert=True)
-
-    return (nw,nh)
-
-def get_resize(size:tuple[int,int], kind:str="%", width=None, height=None, convert=False) -> int:
-    """Returns correct size. 
-    Converts from pixels to % and viceversa, OR returns the proportional value of one dimension if given the other.
-    Needs height or width, otherwise raises an error."""
-    ogw, ogh = size
-    ratio    = ogw/ogh
-
-    if width == None and height == None:
-        raise ValueError("No value provided for neither W nor H")
-    
-    # We're converting from % to px and viceversa
-    if convert:
-        # if we're given %, we need to convert to px
-        if kind == "%":
-            if width:
-                return round(ogw*width/100)
-            elif height:
-                return round(ogh*height/100)
-
-        # if we're given px, convert to %
-        else:
-            if width:
-                return width/ogw*100
-            elif height:
-                return height/ogh*100
-        
-    # if we're not converting, we want the value not provided. Only needed for keepratio.
-    else:
-        # %h = %w, so return the same value given.
-        if kind == "%":
-            return width if width else height #type:ignore
-        # here we need to calculate the value not given by using the ratio
-        else:
-            # if given width, return height
-            if width:
-                return round(width/ratio)
-            # if given height, return width
-            elif height:
-                return round(ratio*height)
-
-    # if we're not converting and not keeping ratio, error.
-    return -1
-
-#--------------------
-# GUI Integration
-
-def get_psd_thumbnail(psd):
-    """returns a thumbnail image for a psd"""
-    thumb = psd.thumbnail()
-    
-    if not thumb:
-        image = psd.composite(apply_icc=False)
-        w, h = image.size
-        new_h = 120
-        new_w = int(1/(h/w) * new_h)
-        thumb = image.resize((new_w, new_h))
-
-    return thumb
-
-def get_psd_dir(filename):
-    """matches a path+filename string and returns the match"""
-    match = re.match(r"(.*/).*\.psd",filename)
-    if match:
-        return match.group(1)
-    return '/'
-
-def separate_filters(str, sep=",") -> list:
-    """separates a big str into a list"""
-    # first, separate everything by commas
-    l = str.split(sep)
-    # return a list of the separated items
-    return [i.strip() for i in l if i not in [""," "]]
-
-#----------------------------------
-# Tree Representation
-
-def get_repr(psd:PSDImage)->str:
-    """PSD Layer structure as a string"""
-    text = ""
-
-    if not psd:
-        return text
-    
-    text = text+get_layer_repr(psd) # type: ignore
-
-    return text
-
-def get_layer_repr(layers:list[Layer], level=0)->str:
-    """Returns Layer name if layer is Layer. It iterates over itself appending names if it's a group."""
-    
-    text = ""
-    layer_kinds ={"group": "📂", "pixel": "🎨", "type": "✒️", "shape": "🔷"}
-
-    
-    for layer in layers:
-        layer_name = layer_kinds.get(layer.kind,"📄")+" "+layer.name
-
-        # invisible layer has an icon
-        if not layer.visible:
-            layer_name = "🫥"+layer_name
-        
-        if layer.has_mask():
-            layer_name = layer_name+" "+"⏺"
-
-        if layer.clipping:
-            layer_name = "↷"+layer_name
-
-        if not layer.is_group():
-            text = "   "*level + layer_name+"\n"+text
-
-        else:
-            text = "   "*level + layer_name+"\n"+get_layer_repr(layer, level = level+1)+text #type: ignore
-    
-    return text
-
-#---------------------------
-# PSD opening on GUI
-
-def open_psd(filename:str) -> dict:
-    """
-    This function opens a PSD file from a path str and returns a dict with a PSDImage object and its name (filename.psd).
-    If it fails, it returns an empty dict.
-
-        Parameters:
-            filename (str) : A path str to open a PSD file.
-        
-        Returns:
-            dict: a dictionary containing the PSD file itself and the name of the file.
-    """
-    psd_dict = dict()
-    try:
-        psd_dict["psd"] = PSDImage.open(filename)
-        
-    except:
-        return {}
-    
-    psd_dict["psd_name"] = get_psd_filename_from_path(filename)
-    psd_dict["psd_size"] = psd_dict["psd"].size
-
-    return psd_dict
-
-def get_psd_filename_from_path(filename:str) -> str:
-    """ Given a string that's a path to a file, this function returns a string with the name of the file (extension included)"""
-    match = re.search(r"(?:.*\/)?(.*.psd)",filename)
-    if match:
-        return match.group(1)
-    return ""
-
-def app_kwargs_init(opened_psd) -> dict:
-    """Initializes the dictionary of named attributes for the tkinter app, given an opened psd file"""
-    kwargs = dict()
-    kwargs["file"] = opened_psd
-    kwargs["width"], kwargs["height"] = opened_psd["psd_size"]
-    kwargs["kind"] = "%"
-    kwargs["keep_aspect_ratio"] = True
-    return kwargs
-
-def get_export_args(**kwargs) -> dict:
-    """Given a dictionary, it initializes all the named arguments for use with process_psd()"""
-    
-    # default arg values
-    default = {
-        "extension"         : ".png",
-        "ignore_invisible"  : True,
-        "trim_layers"       : True,
-        "trim_to_mask"      : False,
-        "trim_to_visible"   : False,
-        "scale"             : 1.0,
-        "bbox"              : None,
-        "selected"          : [],
-        "selected_action"   : None,
-        "flatten"           : [],
-        "flatten_action"    : None,
-        "keep_aspect_ratio" : True,
-        "kind"              : "%",
-        "height"            : 0,
-        "width"             : 0
-    }
-
-    # make a new dict by replacing default values with kwargs we got
-    args = {k:kwargs.get(k,default[k]) for k in default}
-
-    # record the canvas size for future reference
-    args["canvas_size"] = kwargs["file"]["psd_size"] #type: ignore
-    
-    # Define the bbox if we're not trimming empty pixels
-    if not args["trim_layers"]:
-
-        # if we want to trim to the visible layers of the psd, get the psd's bbox
-        if args["trim_to_visible"]:
-            args["bbox"] = kwargs["file"]["psd"].bbox #type: ignore
-        
-        # otherwise, bbox is document size.
-        else:
-            args["bbox"] = tuple([0,0] + list(args["canvas_size"])) #type:ignore
-            
-    return args
-
+        bbox = list(canvas_bbox)
+        # top left
+        bbox[0] = canvas_bbox[0] if layer_bbox[0] <= canvas_bbox[0] else layer_bbox[0]
+        bbox[1] = canvas_bbox[1] if layer_bbox[1] <= canvas_bbox[1] else layer_bbox[1]
+        # bottom right
+        bbox[2] = canvas_bbox[2] if layer_bbox[2] >= canvas_bbox[2] else layer_bbox[2]
+        bbox[3] = canvas_bbox[3] if layer_bbox[3] >= canvas_bbox[3] else layer_bbox[3]
+        return tuple(bbox) #type:ignore
+     
