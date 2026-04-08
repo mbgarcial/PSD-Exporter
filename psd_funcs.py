@@ -434,14 +434,12 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     # if we're cropping, set the bbox
     if crop:
         bbox = crop_layer.bbox if crop_layer else bbox
-        print("current bbox, after applying crop:", bbox)
 
     # If we got a PSDImage, flatten it and return.
     if isinstance(layer,PSDImage) or not alpha:
 
         # If this layer has a mask and we're trimming to mask, make the mask's bbox the layer's bbox
         if not isinstance(layer,PSDImage) and all([trim_to_mask, layer.has_mask() and not layer.mask.disabled, not crop]): #type: ignore
-            #print("layer has mask, we're trimming to mask and we're not cropping")
             bbox = layer.mask.bbox # type: ignore
 
         # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
@@ -449,12 +447,8 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
             bbox = bbox
         elif trim_to_size:
             bbox = trim_oob_bbox(bbox, canvas_size) if trim_layers else bbox
-            #print("trimming visible, trim each is:", trim_layers)
         else:
             bbox = layer.bbox if trim_layers else bbox
-            #print("not trimming visible, trim each is:", trim_layers)
-            
-        #print("current bbox, after checking if it's a psd or doesnt have alpha:", bbox)
 
         return layer.composite(force = True, viewport=bbox) #type: ignore
 
@@ -464,8 +458,6 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     # Trim the image if we're not trimming to mask and we don't have trimming disabled.
     if not trim_to_mask and trim_layers and not crop:
         bbox  = image.getbbox()  # type:ignore
-
-    #print("current bbox, has alpha conditional:", bbox)
 
     # return cropped image!   
     return image.crop(bbox) # type:ignore

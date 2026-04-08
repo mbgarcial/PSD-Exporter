@@ -682,6 +682,7 @@ def app_kwargs_init(opened_psd) -> dict:
     kwargs["keep_aspect_ratio"] = True
     kwargs["trim_to_size"] = True
     kwargs["crop_to_layer"] = False
+    kwargs["crop_to_bbox"] = False
     kwargs["crop"] = False
     return kwargs
 
@@ -725,19 +726,15 @@ def get_export_args(**kwargs) -> dict:
             # check if we're trimming out of canvas!
             if args["trim_to_size"]:
                 args["bbox"] = trim_oob_bbox(kwargs["file"]["psd"].bbox,args["canvas_size"])
-                print("got bbox from trim layers F trim to visible T and trim to size T")
+                
             else:
                 args["bbox"] = kwargs["file"]["psd"].bbox #type: ignore
-                print("got bbox from trim Layers F trim to visible T and trim to size F")
+                
         
         # otherwise, bbox is document size.
         else:
-            print("got bbox from trim layers F, trim to visible F")
             args["bbox"] = tuple([0,0] + list(args["canvas_size"])) #type:ignore
 
-        print("from get_export_args, bbox is",args["bbox"])  
-
-    print("from get_export_args: Not trimming and not cropping. bbox is",args["bbox"] )
     return args
 
 #---------------------------
