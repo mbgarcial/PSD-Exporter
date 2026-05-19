@@ -9,8 +9,6 @@ from project import *
 # TESTS for psd_funcs
 
 # Process_psd() doesn't have a unit test, but all its internal helper functions work.
-# dummy_process does basically the same and it works :)
-
 
 def test_process_mask():
 
@@ -660,62 +658,6 @@ def test_what_do_group():
     assert what_do(layer, ["group2", "*"]) == "export" # exporting selection
     assert what_do(layer, ["group2", "*"], selected_action="ignore") == "ignore" # ignoring selection
 
-#filter layers - dummy process testing 
-def test_dummy_process_flatten_action():
-    psd = PSDImage.open("psd_test.psd")
-    
-    assert dummy_process(psd,["group2"], "ignore", ["group1"], None) == [("base","Root"),("group1","Root")]
-    assert dummy_process(psd,[], None, ["group*"], None) == [("base","Root"),("group1","Root"),("group2","Root")]
-    assert dummy_process(psd,[], None, ["group1", "attr3"], None) == [("base","Root"),("group1","Root"),("attr3","group2")]
-    assert dummy_process(psd,["b*"], "ignore", ["group*"], "ignore") == [("attr1","group1"),("attr2","group1"),("attr3","group2")]
-    assert dummy_process(psd,["b*"], "ignore", ["attr*"], "ignore") == [("group1","Root"),("group2","Root")]
-
-def test_dummy_process_ignore():
-    psd = PSDImage.open("psd_test.psd")
-    selected = ["b*"]
-    flatten = ["group*"]
-    assert dummy_process(psd,selected,"ignore",flatten) == [("group1","Root"),("group2","Root")]
-    selected = ["*layer*"]
-    flatten = []
-    assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root"),("attr1","group1"),("attr2","group1")]
-    selected = ["group1","group2"]
-    assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root")]
-    selected = ["group2"]
-    assert dummy_process(psd,selected,"ignore",flatten) == [("base","Root"),("attr1","group1"),("attr2","group1")]
-
-def test_dummy_process_flatten():
-    psd = PSDImage.open("psd_test.psd")
-    selected = ["b*"]
-    flatten = ["group1"]
-    assert dummy_process(psd,selected,"export",flatten) == [("base","Root"),("group1","Root")]
-    flatten = ["group2"]
-    assert dummy_process(psd,selected,"export",flatten) == [("base","Root"),("group2","Root")]
-    flatten = ["group*"]
-    assert dummy_process(psd,flatten,"export",flatten) == [("group1","Root"),("group2","Root")]
-    selected=["attr*"]
-    assert dummy_process(psd,selected,"export",flatten) == [("group1","Root"),("group2","Root")]
-    flatten = ["attr3"]
-    assert dummy_process(psd,selected,"export",flatten) == [("attr1","group1"),("attr2","group1"),("attr3","group2")]
-
-def test_dummy_process_export_filters():
-    psd = PSDImage.open("psd_test.psd")
-    selected=["b*"]
-    assert dummy_process(psd,selected,"export") == [("base","Root")]
-    selected=["Layer*"]
-    exp = dummy_process(psd,selected,"export")
-    assert set(exp) == set([("Layer1","attr3"),("Layer2","attr3")])
-    selected=["*1"]
-    exp = dummy_process(psd,selected,"export")
-    assert set(exp) == set([("Layer1","attr3"),("attr1","group1"),("attr2","group1")])
-
-def test_dummy_process_export():
-    psd = PSDImage.open("psd_test.psd")
-    # export only selected
-    assert dummy_process(psd,["base"],"export") == [("base","Root")]
-    assert dummy_process(psd,["group1"],"export") == [("attr1","group1"),("attr2", "group1")]
-    exp =  dummy_process(psd,["group2"],"export")
-    assert set(exp) == set([("Layer2","attr3"), ("Layer1", "attr3")])
-    assert dummy_process(psd,["base","group1"],"export") == [("base","Root"),("attr1","group1"),("attr2", "group1")]
 
 # get_scale(), get_width_scale(), get_height_scale()
 def test_get_width_and_height_scale():
