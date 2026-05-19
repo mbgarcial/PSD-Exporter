@@ -6,23 +6,13 @@ from project import *
 
 # test for project.py
 
-def test_find_single_layer():
+# open_psd()
+def test_open_psd():
     psd = PSDImage.open("psd_test.psd")
-    assert find_single_layer(psd,"base") == psd.find("base")
-    assert find_single_layer(psd, "Layer1") ==  psd.find("Layer1")
-    assert find_single_layer(psd, "attr1") == "There's more than one Layer with the name 'attr1'."
-    assert find_single_layer(psd, "attr5") == "Layer 'attr5' not found."
-    assert find_single_layer(psd, "group1") == "'group1' is a group."
-
-def test_get_layer_repr():
-    psd = PSDImage.open("psd_test.psd")
-    layer = psd.find("base")
-    repr = get_layer_repr([layer]) #type:ignore
-    assert repr == "🎨 base ⏺\n"
-
-    layer = psd.find("Layer1_clipping")
-    repr = get_layer_repr([layer]) #type:ignore
-    assert repr == "↷🫥🎨 Layer1_clipping\n"
+    opened_psd = open_psd("psd_test.psd")
+    assert opened_psd["psd"].size == psd.size
+    assert opened_psd["psd_name"] == "psd_test.psd"
+    assert opened_psd["psd_size"] == (1024,1024)
 
 # get_export_args()
 def test_get_export_args():
@@ -48,13 +38,25 @@ def test_get_export_args():
 
     assert args["bbox"] == tuple([0,0] + list(args["canvas_size"]))
     
-# open_psd()
-def test_open_psd():
+
+def test_find_single_layer():
     psd = PSDImage.open("psd_test.psd")
-    opened_psd = open_psd("psd_test.psd")
-    assert opened_psd["psd"].size == psd.size
-    assert opened_psd["psd_name"] == "psd_test.psd"
-    assert opened_psd["psd_size"] == (1024,1024)
+    assert find_single_layer(psd,"base") == psd.find("base")
+    assert find_single_layer(psd, "Layer1") ==  psd.find("Layer1")
+    assert find_single_layer(psd, "attr1") == "There's more than one Layer with the name 'attr1'."
+    assert find_single_layer(psd, "attr5") == "Layer 'attr5' not found."
+    assert find_single_layer(psd, "group1") == "'group1' is a group."
+
+def test_get_layer_repr():
+    psd = PSDImage.open("psd_test.psd")
+    layer = psd.find("base")
+    repr = get_layer_repr([layer]) #type:ignore
+    assert repr == "🎨 base ⏺\n"
+
+    layer = psd.find("Layer1_clipping")
+    repr = get_layer_repr([layer]) #type:ignore
+    assert repr == "↷🫥🎨 Layer1_clipping\n"
+
 
 #get_resize()
 def test_get_resize():

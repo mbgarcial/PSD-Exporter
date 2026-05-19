@@ -237,8 +237,8 @@ def process_psd(psd:PSDImage|Group, name, path, **kwargs) -> bool | str:
             # Check if this group has a mask enabled
             mask = layer.mask if layer.has_mask() and not layer.mask.disabled else None #type:ignore
 
-            # if we have a mask, save it in the group kwargs to apply it to its children
-            if mask:
+            # if we have a mask and we're applying masks to children, save it in the group kwargs to apply it to its children
+            if mask and group_kwargs["apply_group_mask"]:
                 group_kwargs = process_mask(mask,group_kwargs)
 
             # if we are exporting the whole group, add "*" to selected so it treats everything as selected,
@@ -275,8 +275,8 @@ def process_mask(mask,group_kwargs:dict)->dict:
 def what_do(layer:Layer|None, selected:list=[], flatten:list=[], selected_action:str|None="export", flatten_action:str|None="flatten",ignore_invisible=True, ignore_clippings=True)->str:
     """Determines what to do with a layer during processing, given a list of selected items, what to do with those selected items, and a list of layers to flatten."""
     
-    # First of all, if layer is empty, or not a layer, ignore it right away.
-    if not layer:
+    # First of all, if layer is empty, not a layer, or an adjustment layer without pixels, ignore it right away.
+    if not layer or layer.kind not in ["group","pixel","type","shape","solidcolorfill","patternfill","gradientfill"]:
         return "ignore"
     
     # First, check if the layer qualifies as selected.
@@ -377,33 +377,6 @@ def get_regex(expressions:list)->str:
     # join all the regexes separated by "|"" and put the result inside "()"
     return r"(" + "|".join(rex) + ")"
 
-def dummy_process(psd:PSDImage|Layer, selected:list=[], selected_action:str|None=None, flatten:list=[], flatten_action:str|None=None) -> list:
-    """Temp function to test logic before applying it to process_psd"""
-    filtered = []
-    
-    for layer in psd: #type:ignore
-        layer_action = what_do(layer,selected,flatten,selected_action, flatten_action)
-        layer_append = (layer.name, layer.parent.name)
-
-        # save: saves image (appends it to the list of what would be saved)
-        if layer_action == "save":
-            filtered.append(layer_append)
-        
-        # ignore: ignore it xD
-        elif layer_action == "ignore":
-            pass
-
-        elif layer.is_group(): 
-            # pass: enters the group and processes the contents
-            if layer_action == "pass":
-                filtered = filtered + dummy_process(layer,selected,selected_action,flatten, flatten_action)
-            
-            # export: saves *everything* inside the folder
-            elif layer_action=="export":
-                filtered = filtered + dummy_process(layer,["*"],selected_action,flatten, flatten_action)
-
-    return filtered
-
 #----------------------------------------------------------------
 # PSD Processing - aux
 
@@ -429,7 +402,22 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
     crop_layer   = kwargs.get("crop_layer",None) #do we have a crop layer?
     crop         = kwargs.get("crop",False) #are we cropping with bbox?
 
-    crop = any([crop_layer, crop]) # add cropping numbers later.
+    crop = any([crop_layer, crop]) 
+
+    # record layer and parent visibility and make them all visible
+    if not isinstance(layer,PSDImage):
+        visible = layer.visible
+        parent_visible = layer.parent.visible #type:ignore
+        grandparent_visible = None if layer.parent.name == "Root" else layer.parent.parent.visible#type:ignore
+        layer.visible = True
+        if layer.parent.name != "Root": #type:ignore
+            layer.parent.visible = True #type:ignore
+            if layer.parent.parent.name != "Root": #type:ignore
+                layer.parent.parent.visible = True #type:ignore
+    
+    # if our layer is a shape, the bbox is the vector_mask's bbox, not the layer's bbox
+    if layer.kind == "shape":
+        bbox = layer.mask.bbox if bbox == layer.bbox else bbox#type:ignore
 
     # if we're cropping, set the bbox
     if crop:
@@ -442,17 +430,36 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
         if not isinstance(layer,PSDImage) and all([trim_to_mask, layer.has_mask() and not layer.mask.disabled, not crop]): #type: ignore
             bbox = layer.mask.bbox # type: ignore
 
-        # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
+        # if we're cropping, keep the bbox we already defined
         if crop:
             bbox = bbox
+        # if we're trimming, bbox is psd visible layers bbox, otherwise is canvas size.
         elif trim_to_size:
             bbox = trim_oob_bbox(bbox, canvas_size) if trim_layers else bbox
+        elif trim_layers:
+            bbox = layer.bbox if layer.kind != "shape" else layer.mask.bbox #type:ignore
+        
+        if layer.kind == "shape":
+            print(layer.name, "is shape. layer bbox:", layer.bbox, "saved bbox:", bbox, "mask bbox:", layer.mask.bbox) #type:ignore
         else:
-            bbox = layer.bbox if trim_layers else bbox
+            print(layer.name, "is not shape. layer bbox:", layer.bbox, "saved bbox:", bbox)
+            
+        image = layer.composite(force = True, viewport=bbox) #type: ignore
+        
+        
+        # return visibility to layers and parents before returning
+        if not isinstance(layer,PSDImage):
+            layer.visible = visible #type:ignore
+            if layer.parent.name != "Root": #type:ignore
+                layer.parent.visible = parent_visible #type:ignore
+                if layer.parent.parent.name != "Root": #type:ignore
+                    layer.parent.parent.visible = grandparent_visible #type:ignore
 
-        return layer.composite(force = True, viewport=bbox) #type: ignore
+        #return image
+        return image.crop(image.getbbox()) if trim_layers and image else image #type: ignore
 
     # composites with alpha
+   
     image = composite_alpha(layer,alpha,canvas_size)
 
     # Trim the image if we're not trimming to mask and we don't have trimming disabled.
@@ -460,7 +467,15 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
         bbox  = image.getbbox()  # type:ignore
 
     # return cropped image!   
-    return image.crop(bbox) # type:ignore
+    image = image.crop(bbox)#type:ignore
+    # return visibility to layers and parents before returning
+    if not isinstance(layer,PSDImage):
+        layer.visible = visible #type:ignore
+        if layer.parent.name != "Root": #type:ignore
+            layer.parent.visible = parent_visible #type:ignore
+            if layer.parent.parent.name != "Root": #type:ignore
+                layer.parent.parent.visible = grandparent_visible #type:ignore
+    return image # type:ignore
 
 def create_alpha(mask, canvas_size) -> Image.Image|None:
     """Converts a layer mask to b/w image of the canvas size provided"""
@@ -496,7 +511,7 @@ def composite_alpha(layer:Layer|Group|None, alpha:Image.Image|None, canvas_size:
     # return the image
     return image
 
-# resize auxs for GUI and Save ----  
+# resize auxs used by ExportableImg.save() and reused by the App in project.py ----  
 
 def get_height_scale(og_size,new_height)->float:
     """returns height scale"""

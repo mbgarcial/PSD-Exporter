@@ -21,7 +21,7 @@ class App:
         # Master is the TK window we'll be applying all these to.
         self.master = master
         # Give the window a name
-        master.title("Export Layers - with checkboxes and radiobuttons")
+        master.title("PSD Layers to PNG batch exporter")
 
         # Size
         master.geometry(geometry)
@@ -161,8 +161,8 @@ class App:
         self.export_button.grid(row = 2, column = 0, pady = 2)
         
         # row 3-4
-        tk.Label(self.left_frame, text="").grid(row = 3, column = 0, pady=1, sticky=tk.W) # <- temp space
-        self.ignore_invisible_check.grid(row = 4, column = 0, pady=2, sticky=tk.W)
+        self.ignore_invisible_check.grid(row = 3, column = 0, pady=2, sticky=tk.W)
+        tk.Label(self.left_frame, text="[] Apply group mask to children layers").grid(row = 4, column = 0, pady=1, sticky=tk.W) # <- temp space
         
         # row 5: CROP
         self.crop_frame.grid(row = 5, column = 0, pady=2, sticky=tk.W)
@@ -244,7 +244,7 @@ class App:
         self.right_frame.config(text=str(psd_name))
 
     def reset_tree(self):
-        """Clears the testfield that shows the tree"""
+        """Clears the textfield that shows the tree"""
         self.psdinfo.config(state=tk.NORMAL)
         self.psdinfo.delete("1.0", tk.END) #???
         self.psdinfo.config(state=tk.DISABLED)
@@ -255,16 +255,17 @@ class App:
     def retrieve_filter_kwargs(self):
         # get the vars
         selected = [i.strip() for i in self.selected.get().split(",") if i not in [""," "]]
-        flatten = [i.strip() for i in self.flatten.get().split(",") if i not in [""," "]]
+        flatten  = [i.strip() for i in self.flatten.get().split(",") if i not in [""," "]]
+        
         selected_action = self.selected_action.get()
-        flatten_action = self.flatten_action.get()
+        flatten_action  = self.flatten_action.get()
         selected_action = selected_action if selected_action in ["ignore","export"] else None
-        flatten_action = flatten_action if flatten_action in ["ignore","flatten"] else None
+        flatten_action  = flatten_action if flatten_action in ["ignore","flatten"] else None
 
-        self.kwargs["selected"]=selected
-        self.kwargs["flatten"]=flatten
+        self.kwargs["selected"] = selected
+        self.kwargs["flatten"]  = flatten
         self.kwargs["selected_action"] = selected_action
-        self.kwargs["flatten_action"] = flatten_action
+        self.kwargs["flatten_action"]  = flatten_action
 
     def resize_set_focus(self,event):
         """Callback for when a widget is focused, sets resize_focus to the name of the widget."""
@@ -684,6 +685,7 @@ def app_kwargs_init(opened_psd) -> dict:
     kwargs["crop_to_layer"] = False
     kwargs["crop_to_bbox"] = False
     kwargs["crop"] = False
+    kwargs["apply_group_mask"] = True
     return kwargs
 
 def get_export_args(**kwargs) -> dict:
@@ -693,6 +695,7 @@ def get_export_args(**kwargs) -> dict:
     default = {
         "extension"         : ".png",
         "ignore_invisible"  : True,
+        "apply_group_mask"  : True,
         "trim_layers"       : True,
         "trim_to_mask"      : False,
         "trim_to_visible"   : False,
