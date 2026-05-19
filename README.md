@@ -45,8 +45,8 @@ The other functions of the file contain mostly helpers of process_psd() and Expo
 I would have liked to have a more visually appealing interface, however tkinter proved to be harder to learn and to design with than I anticipated. In the end, I decided to prioritize working on the project's functionality rather than the aesthetics.
 psd-tools has limitations on the kind of layers it's able to work with, so any layers beyond pixel/raster, type and shapes are sadly currently ignored by the application (i.e. adjustments layers). This also applies to layer effects, such as stroke, glow, drop shadow, etc.
 Layers in different blending modes are currently untested.
-As I discovered psd-tools limitations, I also reported some inconsistencies I found to the developer, and thus I learned how to create an issue report on gitHub, and had the pleasure to have everything solved and updated in the library in a timely fashion.
-I would have loved to implement more features, but the whole thing started to be poalgued by feature-creep, so I had to cut back.
+As I discovered psd-tools limitations, I also reported some inconsistencies I found to the developer, and thus I learned how to create an issue report on gitHub, and had the pleasure to have them solved and updated in the library in a timely fashion. 
+I would have loved to implement more features, but the whole thing started to be plagued by feature-creep, so I had to cut back.
 
 
 

@@ -162,7 +162,7 @@ class App:
         
         # row 3-4
         self.ignore_invisible_check.grid(row = 3, column = 0, pady=2, sticky=tk.W)
-        tk.Label(self.left_frame, text="[] Apply group mask to children layers").grid(row = 4, column = 0, pady=1, sticky=tk.W) # <- temp space
+        #tk.Label(self.left_frame, text="[] Apply group mask to children layers").grid(row = 4, column = 0, pady=1, sticky=tk.W) # <- temp space
         
         # row 5: CROP
         self.crop_frame.grid(row = 5, column = 0, pady=2, sticky=tk.W)

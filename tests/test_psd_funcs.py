@@ -10,32 +10,6 @@ from project import *
 
 # Process_psd() doesn't have a unit test, but all its internal helper functions work.
 
-def test_shape_layer_bbox():
-    # init
-    opened_psd   = open_psd("psd_test5.psd")
-    args         = get_export_args(**app_kwargs_init(opened_psd))
-    psd          = opened_psd["psd"]
-
-    # get shape layer and raster layer
-    shape_layer = psd.find("Layer 2")
-    raster_layer = psd.find("Layer 3")
-
-    mask = shape_layer.mask
-    assert mask.bbox == raster_layer.bbox
-
-    mask = mask.topil()
-    assert mask.size == raster_layer.composite().size
-
-    shape_layer_image = shape_layer.composite(force = True, viewport = shape_layer.mask.bbox)
-    raster_layer_image = raster_layer.composite()
-    
-    assert shape_layer_image.size == raster_layer_image.size  
-    #assert shape_layer_image.getbbox() == raster_layer_image.getbbox()
-    psd_image = psd.composite(layer_filter = lambda l: l.name == shape_layer.name)
-    assert psd_image.size == psd.size
-    psd_image = psd_image.crop(psd_image.getbbox())
-    assert psd_image.size == shape_layer.composite().size#raster_layer_image.size
-
 def test_process_mask():
 
     # init

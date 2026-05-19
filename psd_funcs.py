@@ -131,6 +131,7 @@ class ExportableImg():
         # convert the layer to a pil image, using the export args
         image = layer_to_img(self.image, **export_args)
 
+
         # if the image succeeded in being created, process and save
         if image:
 
@@ -278,11 +279,14 @@ def what_do(layer:Layer|None, selected:list=[], flatten:list=[], selected_action
     # First of all, if layer is empty, not a layer, or an adjustment layer without pixels, ignore it right away.
     if not layer or layer.kind not in ["group","pixel","type","shape","solidcolorfill","patternfill","gradientfill"]:
         return "ignore"
+    elif layer.bbox == (0,0,0,0):
+        #print("ignoring empty layer:", layer.name)
+        return "ignore"
     
     # First, check if the layer qualifies as selected.
     layer_is_selected = is_selected(layer, selected)
     
-    # Now, check if we have selection or flatten dierectives. If not, then set their respective actions to None.
+    # Now, check if we have selection or flatten directives. If not, then set their respective actions to None.
     selected_action = selected_action if selected else None
     flatten_action  = flatten_action if flatten else None
     
@@ -439,11 +443,6 @@ def layer_to_img(layer:Layer|PSDImage, **kwargs) -> Image.Image | None:
         elif trim_layers:
             bbox = layer.bbox if layer.kind != "shape" else layer.mask.bbox #type:ignore
         
-        if layer.kind == "shape":
-            print(layer.name, "is shape. layer bbox:", layer.bbox, "saved bbox:", bbox, "mask bbox:", layer.mask.bbox) #type:ignore
-        else:
-            print(layer.name, "is not shape. layer bbox:", layer.bbox, "saved bbox:", bbox)
-            
         image = layer.composite(force = True, viewport=bbox) #type: ignore
         
         
