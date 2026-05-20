@@ -1,6 +1,6 @@
 ## PSD Layers to PNG batch-exporter
 ### CS50P Final Project
-#### Video Demo: <URL HERE>
+#### Video Demo: https://youtu.be/jXeQIDoEvds
 
 ### About the project
 I created this little app out of a need to streamline the creation of individual PNG files out of the Layers in a PSD file.
